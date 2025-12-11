@@ -1,70 +1,63 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hologram Controller</title>
+    <meta charset="UTF-8">
+    <title>Hologram Micro:bit</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: black; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+        }
+        video {
+            width: 100%;
+            max-width: 500px;
+            display: none;
+        }
+    </style>
 </head>
 <body>
-  <h1>Micro:bit Hologram</h1>
-  <button id="connectButton">Připojit Micro:bit</button>
 
-  <video id="snowVideo" width="300" style="display:none;" autoplay loop muted>
-    <source src="snow.mp4" type="video/mp4">
-  </video>
+    <video id="snow" src="snow.mp4" loop></video>
+    <video id="cloud" src="cloud.mp4" loop></video>
+    <video id="fire" src="fire.mp4" loop></video>
+    <video id="moon" src="moon.mp4" loop></video>
+    <video id="sun" src="sun.mp4" loop></video>
 
-  <video id="sunVideo" width="300" style="display:none;" autoplay loop muted>
-    <source src="sun.mp4" type="video/mp4">
-  </video>
+    <script>
+        let videos = {
+            snow: document.getElementById("snow"),
+            cloud: document.getElementById("cloud"),
+            fire: document.getElementById("fire"),
+            moon: document.getElementById("moon"),
+            sun: document.getElementById("sun")
+        };
 
-  <video id="moonVideo" width="300" style="display:none;" autoplay loop muted>
-    <source src="moon.mp4" type="video/mp4">
-  </video>
+        function showVideo(name) {
+            for (let v in videos) {
+                videos[v].pause();
+                videos[v].style.display = "none";
+            }
+            videos[name].style.display = "block";
+            videos[name].play();
+        }
 
-<script>
-let bluetoothDevice;
-let gattServer;
-let uartService;
-let uartCharacteristic;
-
-document.getElementById("connectButton").addEventListener("click", async () => {
-  try {
-    bluetoothDevice = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: "BBC micro:bit" }],
-      optionalServices: ["6e400001-b5a3-f393-e0a9-e50e24dcca9e"]
-    });
-
-    gattServer = await bluetoothDevice.gatt.connect();
-    uartService = await gattServer.getPrimaryService("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-    uartCharacteristic = await uartService.getCharacteristic("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
-
-    await uartCharacteristic.startNotifications();
-
-    uartCharacteristic.addEventListener("characteristicvaluechanged", (event) => {
-      let value = new TextDecoder().decode(event.target.value).trim();
-
-      if (value === "cold") {
-        showVideo("snowVideo");
-      } else if (value === "hot") {
-        showVideo("sunVideo");
-      } else if (value === "dark") {
-        showVideo("moonVideo");
-      }
-    });
-
-    alert("micro:bit připojen!");
-  } catch (error) {
-    alert("Chyba: " + error);
-  }
-});
-
-function showVideo(id) {
-  document.getElementById("snowVideo").style.display = "none";
-  document.getElementById("sunVideo").style.display = "none";
-  document.getElementById("moonVideo").style.display = "none";
-
-  document.getElementById(id).style.display = "block";
-}
-</script>
+        // Micro:bit Bluetooth UART
+        navigator.bluetooth.requestDevice({
+            filters: [{ services: ["uart"] }]
+        }).then(device => device.gatt.connect())
+        .then(server => server.getPrimaryService("uart"))
+        .then(service => service.getCharacteristic("uart_rx"))
+        .then(characteristic => {
+            characteristic.startNotifications();
+            characteristic.addEventListener("characteristicvaluechanged", event => {
+                let text = new TextDecoder().decode(event.target.value);
+                showVideo(text.trim());
+            });
+        });
+    </script>
 </body>
 </html>
