@@ -10,12 +10,15 @@
     .video-frame{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
     video{max-width:90vw;max-height:90vh;width:auto;height:auto;object-fit:contain;display:none}
 
-    /* Small buttons in bottom-left corner, single row */
-    .corner-btns{position:fixed;left:10px;bottom:10px;display:flex;flex-direction:row;gap:8px;align-items:center;z-index:999}
+    /* Small buttons in bottom-left corner, single row INSIDE video-frame so they remain in fullscreen */
+    .corner-btns{position:absolute;left:10px;bottom:10px;display:flex;flex-direction:row;gap:8px;align-items:center;z-index:9999;pointer-events:auto}
     .num-btn{width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:18px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.95}
     .num-btn:active{transform:scale(0.98)}
     .action-btn{min-width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.95}
     .action-btn:active{transform:scale(0.98)}
+
+    /* Make sure buttons are visible in fullscreen on different browsers */
+    :fullscreen .corner-btns, :-webkit-full-screen .corner-btns, :-moz-full-screen .corner-btns { position:fixed; left:10px; bottom:10px; }
 
     /* Visually hide everything else if accidentally present */
     header,footer,.note,.controls,.raw,.manual,.status{display:none}
@@ -28,18 +31,18 @@
     <video id="fire" src="fire.mp4" loop muted playsinline preload="auto"></video>
     <video id="moon" src="moon.mp4" loop muted playsinline preload="auto"></video>
     <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
-  </div>
 
-  <!-- Buttons: single row of numbers + OFF + Fullscreen toggle -->
-  <div class="corner-btns" aria-hidden="false">
-    <button class="num-btn" data-cmd="snow" aria-label="1">1</button>
-    <button class="num-btn" data-cmd="cloud" aria-label="2">2</button>
-    <button class="num-btn" data-cmd="fire" aria-label="3">3</button>
-    <button class="num-btn" data-cmd="moon" aria-label="4">4</button>
-    <button class="num-btn" data-cmd="sun" aria-label="5">5</button>
+    <!-- Buttons moved INSIDE video-frame so they remain visible in fullscreen -->
+    <div class="corner-btns" aria-hidden="false">
+      <button class="num-btn" data-cmd="snow" aria-label="1">1</button>
+      <button class="num-btn" data-cmd="cloud" aria-label="2">2</button>
+      <button class="num-btn" data-cmd="fire" aria-label="3">3</button>
+      <button class="num-btn" data-cmd="moon" aria-label="4">4</button>
+      <button class="num-btn" data-cmd="sun" aria-label="5">5</button>
 
-    <button class="action-btn" id="offBtn" aria-label="OFF">OFF</button>
-    <button class="action-btn" id="fsBtn" aria-label="Fullscreen">FS</button>
+      <button class="action-btn" id="offBtn" aria-label="OFF">OFF</button>
+      <button class="action-btn" id="fsBtn" aria-label="Fullscreen">FS</button>
+    </div>
   </div>
 
   <script>
@@ -81,9 +84,7 @@
     }
 
     // Stop / OFF
-    function stopAll(){
-      hideAll();
-    }
+    function stopAll(){ hideAll(); }
 
     // Unlock autoplay on first interaction by briefly playing muted videos
     let unlocked = false;
@@ -95,62 +96,45 @@
 
     // Button listeners for numbers
     document.querySelectorAll('.num-btn').forEach(b=>{
-      b.addEventListener('click', ()=>{
-        unlockAutoplay();
-        play(b.dataset.cmd);
-      });
+      b.addEventListener('click', ()=>{ unlockAutoplay(); play(b.dataset.cmd); });
     });
 
     // OFF button
-    document.getElementById('offBtn').addEventListener('click', ()=>{
-      stopAll();
-    });
+    document.getElementById('offBtn').addEventListener('click', ()=>{ stopAll(); });
 
     // Fullscreen toggle: single button for enter/exit fullscreen
     const fsTarget = document.querySelector('.video-frame') || document.documentElement;
-    function isFullscreen() {
-      return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
-    }
-    async function toggleFullscreen() {
-      try {
-        if (!isFullscreen()) {
-          if (fsTarget.requestFullscreen) await fsTarget.requestFullscreen();
-          else if (fsTarget.webkitRequestFullscreen) await fsTarget.webkitRequestFullscreen();
-          else if (fsTarget.mozRequestFullScreen) await fsTarget.mozRequestFullScreen();
-          else if (fsTarget.msRequestFullscreen) await fsTarget.msRequestFullscreen();
+    function isFullscreen(){ return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement); }
+    async function toggleFullscreen(){
+      try{
+        if(!isFullscreen()){
+          if(fsTarget.requestFullscreen) await fsTarget.requestFullscreen();
+          else if(fsTarget.webkitRequestFullscreen) await fsTarget.webkitRequestFullscreen();
+          else if(fsTarget.mozRequestFullScreen) await fsTarget.mozRequestFullScreen();
+          else if(fsTarget.msRequestFullscreen) await fsTarget.msRequestFullscreen();
         } else {
-          if (document.exitFullscreen) await document.exitFullscreen();
-          else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
-          else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
-          else if (document.msExitFullscreen) await document.msExitFullscreen();
+          if(document.exitFullscreen) await document.exitFullscreen();
+          else if(document.webkitExitFullscreen) await document.webkitExitFullscreen();
+          else if(document.mozCancelFullScreen) await document.mozCancelFullScreen();
+          else if(document.msExitFullscreen) await document.msExitFullscreen();
         }
-      } catch (err) {
-        console.warn('Fullscreen toggle failed', err);
-      }
+      }catch(err){ console.warn('Fullscreen toggle failed', err); }
     }
 
-    // Update FS button label on change
-    function updateFsButton() {
-      fsBtn.textContent = isFullscreen() ? 'EXIT' : 'FS';
-    }
+    function updateFsButton(){ fsBtn.textContent = isFullscreen() ? 'EXIT' : 'FS'; }
     document.addEventListener('fullscreenchange', updateFsButton);
     document.addEventListener('webkitfullscreenchange', updateFsButton);
     document.addEventListener('mozfullscreenchange', updateFsButton);
     document.addEventListener('MSFullscreenChange', updateFsButton);
 
-    fsBtn.addEventListener('click', async () => {
-      unlockAutoplay();
-      await toggleFullscreen();
-      updateFsButton();
-    });
+    fsBtn.addEventListener('click', async ()=>{ unlockAutoplay(); await toggleFullscreen(); updateFsButton(); });
 
     // Keyboard support: 1-5 play, 0 stops, f toggles fullscreen
     window.addEventListener('keydown',(e)=>{
       if(document.activeElement && (document.activeElement.tagName==='INPUT' || document.activeElement.tagName==='TEXTAREA')) return;
       if(e.key >= '1' && e.key <= '5'){
         const map = { '1':'snow','2':'cloud','3':'fire','4':'moon','5':'sun' };
-        unlockAutoplay();
-        play(map[e.key]);
+        unlockAutoplay(); play(map[e.key]);
       }
       if(e.key === '0') stopAll();
       if(e.key.toLowerCase() === 'f') toggleFullscreen();
@@ -158,10 +142,7 @@
 
     // On load: start with black screen
     window.addEventListener('load', ()=>{
-      hideAll();
-      updateFsButton();
-      Object.values(videos).forEach(v => v.addEventListener('error', ()=>console.warn('Video load error', v.id)));
-    });
+      hideAll(); updateFsButton(); Object.values(videos).forEach(v => v.addEventListener('error', ()=>console.warn('Video load error', v.id))); });
   </script>
 </body>
 </html>
