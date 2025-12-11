@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Hologram — minimal</title>
+  <style>
+    /* Full-black hologram style: only video and small numeric buttons visible */
+    html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,Arial,Helvetica,sans-serif}
+    .video-frame{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
+    video{max-width:90vw;max-height:90vh;width:auto;height:auto;object-fit:contain;display:none}
+
+    /* Small numeric buttons in bottom-left corner */
+    .corner-btns{position:fixed;left:10px;bottom:10px;display:flex;flex-direction:column;gap:8px;z-index:999}
+    .num-btn{width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:18px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.9}
+    .num-btn:active{transform:scale(0.98)}
+
+    /* Visually hide everything else if accidentally present */
+    header,footer,.note,.controls,.raw,.manual,.status{display:none}
+  </style>
+</head>
+<body>
+  <div class="video-frame" aria-live="polite">
+    <video id="snow" src="snow.mp4" loop muted playsinline preload="auto"></video>
+    <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
+    <video id="fire" src="fire.mp4" loop muted playsinline preload="auto"></video>
+    <video id="moon" src="moon.mp4" loop muted playsinline preload="auto"></video>
+    <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
+  </div>
+
+  <div class="corner-btns" aria-hidden="false">
+    <button class="num-btn" data-cmd="snow" aria-label="1">1</button>
+    <button class="num-btn" data-cmd="cloud" aria-label="2">2</button>
+    <button class="num-btn" data-cmd="fire" aria-label="3">3</button>
+    <button class="num-btn" data-cmd="moon" aria-label="4">4</button>
+    <button class="num-btn" data-cmd="sun" aria-label="5">5</button>
+  </div>
+
+  <script>
+    const videos = {
+      snow: document.getElementById('snow'),
+      cloud: document.getElementById('cloud'),
+      fire: document.getElementById('fire'),
+      moon: document.getElementById('moon'),
+      sun: document.getElementById('sun')
+    };
+
+    // Hide all videos
+    function hideAll(){
+      Object.values(videos).forEach(v=>{ try{ v.pause(); }catch{} v.style.display='none'; });
+    }
+
+    // Play video by name
+    function play(name){
+      name = (name||'').toString().trim().toLowerCase();
+      if(!name || name === 'stop' || name === 'none'){
+        hideAll();
+        return;
+      }
+      const v = videos[name];
+      if(!v) return;
+      hideAll();
+      v.style.display='block';
+      v.currentTime = 0;
+      // try to unmute & play; if blocked, the user should tap a button (this is one)
+      v.muted = false;
+      v.play().catch(err=>{
+        // if autoplay blocked, keep muted and try again once user interacts
+        v.muted = true;
+        console.warn('Autoplay blocked:', err);
+      });
+    }
+
+    // Button listeners
+    document.querySelectorAll('.num-btn').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const cmd = b.dataset.cmd;
+        // first interaction: try to unlock by briefly playing muted videos
+        unlockAutoplay();
+        play(cmd);
+      });
+    });
+
+    // Keyboard support 1-5 and 0 to stop
+    window.addEventListener('keydown',(e)=>{
+      if(document.activeElement && (document.activeElement.tagName==='INPUT' || document.activeElement.tagName==='TEXTAREA')) return;
+      if(e.key >= '1' && e.key <= '5'){
+        const map = { '1':'snow','2':'cloud','3':'fire','4':'moon','5':'sun' };
+        unlockAutoplay();
+        play(map[e.key]);
+      }
+      if(e.key === '0') play('stop');
+    });
+
+    // Try to unlock autoplay by playing all videos muted once on first interaction
+    let unlocked = false;
+    function unlockAutoplay(){
+      if(unlocked) return; unlocked = true;
+      Object.values(videos).forEach(v=>{ v.muted = true; v.play().then(()=>v.pause()).catch(()=>{}); });
+    }
+
+    // On load, ensure black background and hide errors
+    window.addEventListener('load', ()=>{
+      hideAll();
+      // If any video fails to load, that won't break the UI — hologram stays black
+      Object.values(videos).forEach(v=> v.addEventListener('error', ()=>console.warn('Video load error', v.id)));
+    });
+  </script>
+</body>
+</html>
