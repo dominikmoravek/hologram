@@ -1,154 +1,150 @@
-<div class="video-container" aria-live="polite">
-    <video id="snow" src="snow.mp4" loop muted playsinline preload="auto"></video>
-    <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
-    <video id="fire" src="fire.mp4" loop muted playsinline preload="auto"></video>
-    <video id="moon" src="moon.mp4" loop muted playsinline preload="auto"></video>
-    <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
-</div>
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Hologram — manuální ovládání</title>
+  <style>
+    :root{--bg:#000;--fg:#fff;--accent:#3b82f6;--panel:#111}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,Arial,Helvetica,sans-serif}
+    .wrap{max-width:1000px;margin:10px auto;padding:12px;display:flex;flex-direction:column;gap:12px;align-items:center}
+    h1{margin:0;font-size:1.25rem}
+    .video-frame{width:min(900px,95vw);height:min(700px,75vh);background:var(--panel);border-radius:8px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center}
+    video{width:100%;height:100%;object-fit:cover;display:none}
+    .controls{width:100%;display:flex;gap:8px;align-items:center;justify-content:space-between}
+    .left-controls{display:flex;gap:8px;align-items:center}
+    .btn{background:var(--accent);color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .btn.secondary{background:#444}
+    .status{text-align:left;font-size:.95rem;opacity:.95}
+    .manual{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center}
+    .manual .num-btn{width:48px;height:48px;border-radius:8px;border:none;background:#222;color:var(--fg);font-weight:bold;cursor:pointer}
+    .note{font-size:.9rem;opacity:.85;text-align:center;max-width:900px}
+    .raw{width:100%;background:#060606;color:#9f9;padding:8px;border-radius:6px;font-family:monospace;font-size:.9rem;word-break:break-all}
+    footer{font-size:.85rem;opacity:.8}
+    @media (max-width:480px){ .manual .num-btn{width:40px;height:40px} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Hologram — manuální ovládání</h1>
 
-<div class="note">
-    Po kliknutí na "Připojit Micro:bit" udělíš prohlížeči přístup k zařízení. Micro:bit musí vysílat textové příkazy přes Nordic UART (NUS). Platné příkazy: "snow", "cloud", "fire", "moon", "sun". Pro ukončení přehrávání pošli "stop" nebo "none".
-</div>
+    <div class="controls">
+      <div class="left-controls">
+        <button id="unlockBtn" class="btn secondary">Povolit přehrávání (mobil)</button>
+        <div id="status" class="status">Nepřehrává</div>
+      </div>
+      <div>
+        <button id="stopBtn" class="btn">Zastavit</button>
+      </div>
+    </div>
 
-<script>
-    // Nordic UART Service (NUS) UUID a characteristicy
-    const NUS_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-    const NUS_TX_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // notify from device -> client
+    <div class="video-frame" aria-live="polite">
+      <video id="snow" src="snow.mp4" loop muted playsinline preload="auto"></video>
+      <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
+      <video id="fire" src="fire.mp4" loop muted playsinline preload="auto"></video>
+      <video id="moon" src="moon.mp4" loop muted playsinline preload="auto"></video>
+      <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
+    </div>
 
-    const connectBtn = document.getElementById('connectBtn');
-    const disconnectBtn = document.getElementById('disconnectBtn');
-    const statusEl = document.getElementById('status');
+    <div class="manual">
+      <!-- levé dolní tlačítka 1-5 -->
+      <button class="num-btn" data-cmd="snow">1</button>
+      <button class="num-btn" data-cmd="cloud">2</button>
+      <button class="num-btn" data-cmd="fire">3</button>
+      <button class="num-btn" data-cmd="moon">4</button>
+      <button class="num-btn" data-cmd="sun">5</button>
+      <!-- doplňkové -->
+      <input id="manualInp" type="text" placeholder="Zadat příkaz (např. snow)" style="padding:8px;border-radius:8px;border:1px solid #222;background:#111;color:var(--fg)" />
+      <button id="sendBtn" class="btn">Spustit</button>
+    </div>
 
+    <div class="note">
+      Použití: Nahraj sem videa se jmény snow.mp4, cloud.mp4, fire.mp4, moon.mp4, sun.mp4. Klikni na číslo (1–5) pro přehrání odpovídajícího videa. Pokud mobil blokuje autoplay, nejdřív klikni na "Povolit přehrávání".
+    </div>
+
+    <div style="width:100%">
+      <div class="small">Poslední příkaz:</div>
+      <div id="raw" class="raw">—</div>
+    </div>
+
+    <footer>Tip: můžeš použít klávesy 1–5 pro rychlé přepínání.</footer>
+  </div>
+
+  <script>
     const videos = {
-        snow: document.getElementById('snow'),
-        cloud: document.getElementById('cloud'),
-        fire: document.getElementById('fire'),
-        moon: document.getElementById('moon'),
-        sun: document.getElementById('sun')
+      snow: document.getElementById('snow'),
+      cloud: document.getElementById('cloud'),
+      fire: document.getElementById('fire'),
+      moon: document.getElementById('moon'),
+      sun: document.getElementById('sun')
     };
+    const status = document.getElementById('status');
+    const raw = document.getElementById('raw');
 
-    function hideAllVideos() {
-        Object.values(videos).forEach(v => {
-            try { v.pause(); } catch(e){}
-            v.style.display = 'none';
+    function hideAll() {
+      Object.values(videos).forEach(v => { try{ v.pause(); }catch{} v.style.display = 'none'; });
+    }
+
+    function play(name) {
+      name = (name||'').toString().trim().toLowerCase();
+      raw.textContent = name || '—';
+      if (!name || name === 'stop' || name === 'none') {
+        hideAll();
+        status.textContent = 'Nepřehrává';
+        return;
+      }
+      const v = videos[name];
+      if (!v) {
+        status.textContent = 'Neznámý příkaz: ' + name;
+        return;
+      }
+      hideAll();
+      v.style.display = 'block';
+      v.currentTime = 0;
+      v.play().then(()=> {
+        status.textContent = 'Přehrávám: ' + name;
+      }).catch(err => {
+        // pokud autoplay zablokován, informuj uživatele
+        console.warn('Play failed:', err);
+        status.textContent = 'Nelze přehrát — klikni "Povolit přehrávání"';
+      });
+    }
+
+    // odblokování autoplayu: pustí a hned zastaví všechna videa (muted)
+    document.getElementById('unlockBtn').addEventListener('click', () => {
+      Object.values(videos).forEach(v => { v.muted = true; v.play().then(()=>v.pause()).catch(()=>{}); });
+      status.textContent = 'Přehrávání odblokováno (pokud prohlížeč to dovolí)';
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', () => play('stop'));
+
+    document.querySelectorAll('.num-btn').forEach(b => {
+      b.addEventListener('click', () => play(b.dataset.cmd));
+    });
+
+    document.getElementById('sendBtn').addEventListener('click', () => {
+      const v = document.getElementById('manualInp').value.trim();
+      if (v) play(v);
+    });
+
+    // klávesové zkratky 1-5
+    window.addEventListener('keydown', (e) => {
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
+      if (e.key >= '1' && e.key <= '5') {
+        const map = { '1':'snow','2':'cloud','3':'fire','4':'moon','5':'sun' };
+        play(map[e.key]);
+      }
+      if (e.key === '0') play('stop');
+    });
+
+    // Načítací kontrola: pokud některé video chybí, poznáme to
+    window.addEventListener('load', () => {
+      Object.entries(videos).forEach(([name, v]) => {
+        v.addEventListener('error', () => {
+          console.warn('Video chybí:', name);
         });
-    }
-
-    function playVideo(name) {
-        name = (name || '').toLowerCase().trim();
-        if (!name || name === 'stop' || name === 'none') {
-            hideAllVideos();
-            statusEl.textContent = 'Připojeno — čekám na příkazy (vypnuto)';
-            return;
-        }
-        if (!videos[name]) {
-            statusEl.textContent = 'Neznámý příkaz: ' + name;
-            return;
-        }
-        hideAllVideos();
-        const v = videos[name];
-        v.style.display = 'block';
-        // play may return a promise
-        v.currentTime = 0;
-        v.play().catch(err => {
-            // pokud prohlížeč zablokuje autoplay, informujeme uživatele
-            console.warn('Play failed:', err);
-            statusEl.textContent = 'Chyba přehrávání: ' + (err && err.message ? err.message : err);
-        });
-        statusEl.textContent = 'Přehrávám: ' + name;
-    }
-
-    let device = null;
-    let server = null;
-    let txChar = null;
-    const decoder = new TextDecoder();
-
-    async function connectMicrobit() {
-        if (!navigator.bluetooth) {
-            alert('Web Bluetooth není v tomto prohlížeči dostupný.');
-            return;
-        }
-
-        try {
-            statusEl.textContent = 'Výběr zařízení...';
-            device = await navigator.bluetooth.requestDevice({
-                filters: [{ namePrefix: 'BBC micro:bit' }],
-                optionalServices: [NUS_SERVICE_UUID]
-            });
-
-            device.addEventListener('gattserverdisconnected', onDisconnected);
-
-            statusEl.textContent = 'Připojuji k zařízení...';
-            server = await device.gatt.connect();
-
-            const service = await server.getPrimaryService(NUS_SERVICE_UUID);
-            txChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
-
-            await txChar.startNotifications();
-            txChar.addEventListener('characteristicvaluechanged', handleNotifications);
-
-            connectBtn.disabled = true;
-            disconnectBtn.disabled = false;
-            statusEl.textContent = 'Micro:bit připojen — čekám na příkazy';
-        } catch (err) {
-            console.error(err);
-            statusEl.textContent = 'Připojení selhalo: ' + (err && err.message ? err.message : err);
-            device = null;
-            server = null;
-            txChar = null;
-        }
-    }
-
-    function handleNotifications(event) {
-        // event.target.value is a DataView
-        const value = event.target.value;
-        let text;
-        try {
-            // DataView supports buffer property
-            text = decoder.decode(value.buffer ? value.buffer : value);
-        } catch (e) {
-            console.warn('Decode failed, trying fallback', e);
-            try { text = String.fromCharCode.apply(null, new Uint8Array(value.buffer)); } catch(e2) { text = ''; }
-        }
-        text = (text || '').trim();
-        if (!text) return;
-        // some devices send trailing newline, so split and take first token
-        const token = text.split(/\s+/)[0].toLowerCase();
-        playVideo(token);
-    }
-
-    function onDisconnected() {
-        statusEl.textContent = 'Micro:bit odpojen';
-        connectBtn.disabled = false;
-        disconnectBtn.disabled = true;
-        hideAllVideos();
-    }
-
-    async function disconnectMicrobit() {
-        try {
-            if (txChar) {
-                try { await txChar.stopNotifications(); } catch(e){/*ignore*/ }
-                txChar.removeEventListener('characteristicvaluechanged', handleNotifications);
-                txChar = null;
-            }
-            if (device && device.gatt && device.gatt.connected) {
-                device.gatt.disconnect();
-            }
-        } catch (e) {
-            console.warn('Chyba při odpojení', e);
-        } finally {
-            device = null;
-            server = null;
-            connectBtn.disabled = false;
-            disconnectBtn.disabled = true;
-            statusEl.textContent = 'Odpojeno';
-            hideAllVideos();
-        }
-    }
-
-    connectBtn.addEventListener('click', () => connectMicrobit());
-    disconnectBtn.addEventListener('click', () => disconnectMicrobit());
-
-    // volitelně: povolit kliknutím test přehrání (pro debug)
-    // document.body.addEventListener('click', () => Object.values(videos).forEach(v => v.muted = true), { once: true });
-</script>
+      });
+    });
+  </script>
+</body>
+</html>
