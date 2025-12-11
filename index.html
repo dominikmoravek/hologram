@@ -3,71 +3,37 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hologram — manuální ovládání</title>
+  <title>Hologram — minimal</title>
   <style>
-    :root{--bg:#000;--fg:#fff;--accent:#3b82f6;--panel:#111}
-    html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,Arial,Helvetica,sans-serif}
-    .wrap{max-width:1000px;margin:10px auto;padding:12px;display:flex;flex-direction:column;gap:12px;align-items:center}
-    h1{margin:0;font-size:1.25rem}
-    .video-frame{width:min(900px,95vw);height:min(700px,75vh);background:var(--panel);border-radius:8px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center}
-    video{width:100%;height:100%;object-fit:cover;display:none}
-    .controls{width:100%;display:flex;gap:8px;align-items:center;justify-content:space-between}
-    .left-controls{display:flex;gap:8px;align-items:center}
-    .btn{background:var(--accent);color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
-    .btn.secondary{background:#444}
-    .status{text-align:left;font-size:.95rem;opacity:.95}
-    .manual{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center}
-    .manual .num-btn{width:48px;height:48px;border-radius:8px;border:none;background:#222;color:var(--fg);font-weight:bold;cursor:pointer}
-    .note{font-size:.9rem;opacity:.85;text-align:center;max-width:900px}
-    .raw{width:100%;background:#060606;color:#9f9;padding:8px;border-radius:6px;font-family:monospace;font-size:.9rem;word-break:break-all}
-    footer{font-size:.85rem;opacity:.8}
-    @media (max-width:480px){ .manual .num-btn{width:40px;height:40px} }
+    /* Full-black hologram style: only video and small numeric buttons visible */
+    html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,Arial,Helvetica,sans-serif}
+    .video-frame{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
+    video{max-width:90vw;max-height:90vh;width:auto;height:auto;object-fit:contain;display:none}
+
+    /* Small numeric buttons in bottom-left corner */
+    .corner-btns{position:fixed;left:10px;bottom:10px;display:flex;flex-direction:column;gap:8px;z-index:999}
+    .num-btn{width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:18px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.9}
+    .num-btn:active{transform:scale(0.98)}
+
+    /* Visually hide everything else if accidentally present */
+    header,footer,.note,.controls,.raw,.manual,.status{display:none}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Hologram — manuální ovládání</h1>
+  <div class="video-frame" aria-live="polite">
+    <video id="snow" src="snow.mp4" loop muted playsinline preload="auto"></video>
+    <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
+    <video id="fire" src="fire.mp4" loop muted playsinline preload="auto"></video>
+    <video id="moon" src="moon.mp4" loop muted playsinline preload="auto"></video>
+    <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
+  </div>
 
-    <div class="controls">
-      <div class="left-controls">
-        <button id="unlockBtn" class="btn secondary">Povolit přehrávání (mobil)</button>
-        <div id="status" class="status">Nepřehrává</div>
-      </div>
-      <div>
-        <button id="stopBtn" class="btn">Zastavit</button>
-      </div>
-    </div>
-
-    <div class="video-frame" aria-live="polite">
-      <video id="snow" src="snow.mp4" loop muted playsinline preload="auto"></video>
-      <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
-      <video id="fire" src="fire.mp4" loop muted playsinline preload="auto"></video>
-      <video id="moon" src="moon.mp4" loop muted playsinline preload="auto"></video>
-      <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
-    </div>
-
-    <div class="manual">
-      <!-- levé dolní tlačítka 1-5 -->
-      <button class="num-btn" data-cmd="snow">1</button>
-      <button class="num-btn" data-cmd="cloud">2</button>
-      <button class="num-btn" data-cmd="fire">3</button>
-      <button class="num-btn" data-cmd="moon">4</button>
-      <button class="num-btn" data-cmd="sun">5</button>
-      <!-- doplňkové -->
-      <input id="manualInp" type="text" placeholder="Zadat příkaz (např. snow)" style="padding:8px;border-radius:8px;border:1px solid #222;background:#111;color:var(--fg)" />
-      <button id="sendBtn" class="btn">Spustit</button>
-    </div>
-
-    <div class="note">
-      Použití: Nahraj sem videa se jmény snow.mp4, cloud.mp4, fire.mp4, moon.mp4, sun.mp4. Klikni na číslo (1–5) pro přehrání odpovídajícího videa. Pokud mobil blokuje autoplay, nejdřív klikni na "Povolit přehrávání".
-    </div>
-
-    <div style="width:100%">
-      <div class="small">Poslední příkaz:</div>
-      <div id="raw" class="raw">—</div>
-    </div>
-
-    <footer>Tip: můžeš použít klávesy 1–5 pro rychlé přepínání.</footer>
+  <div class="corner-btns" aria-hidden="false">
+    <button class="num-btn" data-cmd="snow" aria-label="1">1</button>
+    <button class="num-btn" data-cmd="cloud" aria-label="2">2</button>
+    <button class="num-btn" data-cmd="fire" aria-label="3">3</button>
+    <button class="num-btn" data-cmd="moon" aria-label="4">4</button>
+    <button class="num-btn" data-cmd="sun" aria-label="5">5</button>
   </div>
 
   <script>
@@ -78,72 +44,66 @@
       moon: document.getElementById('moon'),
       sun: document.getElementById('sun')
     };
-    const status = document.getElementById('status');
-    const raw = document.getElementById('raw');
 
-    function hideAll() {
-      Object.values(videos).forEach(v => { try{ v.pause(); }catch{} v.style.display = 'none'; });
+    // Hide all videos
+    function hideAll(){
+      Object.values(videos).forEach(v=>{ try{ v.pause(); }catch{} v.style.display='none'; });
     }
 
-    function play(name) {
+    // Play video by name
+    function play(name){
       name = (name||'').toString().trim().toLowerCase();
-      raw.textContent = name || '—';
-      if (!name || name === 'stop' || name === 'none') {
+      if(!name || name === 'stop' || name === 'none'){
         hideAll();
-        status.textContent = 'Nepřehrává';
         return;
       }
       const v = videos[name];
-      if (!v) {
-        status.textContent = 'Neznámý příkaz: ' + name;
-        return;
-      }
+      if(!v) return;
       hideAll();
-      v.style.display = 'block';
+      v.style.display='block';
       v.currentTime = 0;
-      v.play().then(()=> {
-        status.textContent = 'Přehrávám: ' + name;
-      }).catch(err => {
-        // pokud autoplay zablokován, informuj uživatele
-        console.warn('Play failed:', err);
-        status.textContent = 'Nelze přehrát — klikni "Povolit přehrávání"';
+      // try to unmute & play; if blocked, the user should tap a button (this is one)
+      v.muted = false;
+      v.play().catch(err=>{
+        // if autoplay blocked, keep muted and try again once user interacts
+        v.muted = true;
+        console.warn('Autoplay blocked:', err);
       });
     }
 
-    // odblokování autoplayu: pustí a hned zastaví všechna videa (muted)
-    document.getElementById('unlockBtn').addEventListener('click', () => {
-      Object.values(videos).forEach(v => { v.muted = true; v.play().then(()=>v.pause()).catch(()=>{}); });
-      status.textContent = 'Přehrávání odblokováno (pokud prohlížeč to dovolí)';
+    // Button listeners
+    document.querySelectorAll('.num-btn').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const cmd = b.dataset.cmd;
+        // first interaction: try to unlock by briefly playing muted videos
+        unlockAutoplay();
+        play(cmd);
+      });
     });
 
-    document.getElementById('stopBtn').addEventListener('click', () => play('stop'));
-
-    document.querySelectorAll('.num-btn').forEach(b => {
-      b.addEventListener('click', () => play(b.dataset.cmd));
-    });
-
-    document.getElementById('sendBtn').addEventListener('click', () => {
-      const v = document.getElementById('manualInp').value.trim();
-      if (v) play(v);
-    });
-
-    // klávesové zkratky 1-5
-    window.addEventListener('keydown', (e) => {
-      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
-      if (e.key >= '1' && e.key <= '5') {
+    // Keyboard support 1-5 and 0 to stop
+    window.addEventListener('keydown',(e)=>{
+      if(document.activeElement && (document.activeElement.tagName==='INPUT' || document.activeElement.tagName==='TEXTAREA')) return;
+      if(e.key >= '1' && e.key <= '5'){
         const map = { '1':'snow','2':'cloud','3':'fire','4':'moon','5':'sun' };
+        unlockAutoplay();
         play(map[e.key]);
       }
-      if (e.key === '0') play('stop');
+      if(e.key === '0') play('stop');
     });
 
-    // Načítací kontrola: pokud některé video chybí, poznáme to
-    window.addEventListener('load', () => {
-      Object.entries(videos).forEach(([name, v]) => {
-        v.addEventListener('error', () => {
-          console.warn('Video chybí:', name);
-        });
-      });
+    // Try to unlock autoplay by playing all videos muted once on first interaction
+    let unlocked = false;
+    function unlockAutoplay(){
+      if(unlocked) return; unlocked = true;
+      Object.values(videos).forEach(v=>{ v.muted = true; v.play().then(()=>v.pause()).catch(()=>{}); });
+    }
+
+    // On load, ensure black background and hide errors
+    window.addEventListener('load', ()=>{
+      hideAll();
+      // If any video fails to load, that won't break the UI — hologram stays black
+      Object.values(videos).forEach(v=> v.addEventListener('error', ()=>console.warn('Video load error', v.id)));
     });
   </script>
 </body>
