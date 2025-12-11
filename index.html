@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hologram Controller</title>
+</head>
+<body>
+  <h1>Micro:bit Hologram</h1>
+  <button id="connectButton">Připojit Micro:bit</button>
+
+  <video id="snowVideo" width="300" style="display:none;" autoplay loop muted>
+    <source src="snow.mp4" type="video/mp4">
+  </video>
+
+  <video id="sunVideo" width="300" style="display:none;" autoplay loop muted>
+    <source src="sun.mp4" type="video/mp4">
+  </video>
+
+  <video id="moonVideo" width="300" style="display:none;" autoplay loop muted>
+    <source src="moon.mp4" type="video/mp4">
+  </video>
+
+<script>
+let bluetoothDevice;
+let gattServer;
+let uartService;
+let uartCharacteristic;
+
+document.getElementById("connectButton").addEventListener("click", async () => {
+  try {
+    bluetoothDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "BBC micro:bit" }],
+      optionalServices: ["6e400001-b5a3-f393-e0a9-e50e24dcca9e"]
+    });
+
+    gattServer = await bluetoothDevice.gatt.connect();
+    uartService = await gattServer.getPrimaryService("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+    uartCharacteristic = await uartService.getCharacteristic("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
+
+    await uartCharacteristic.startNotifications();
+
+    uartCharacteristic.addEventListener("characteristicvaluechanged", (event) => {
+      let value = new TextDecoder().decode(event.target.value).trim();
+
+      if (value === "cold") {
+        showVideo("snowVideo");
+      } else if (value === "hot") {
+        showVideo("sunVideo");
+      } else if (value === "dark") {
+        showVideo("moonVideo");
+      }
+    });
+
+    alert("micro:bit připojen!");
+  } catch (error) {
+    alert("Chyba: " + error);
+  }
+});
+
+function showVideo(id) {
+  document.getElementById("snowVideo").style.display = "none";
+  document.getElementById("sunVideo").style.display = "none";
+  document.getElementById("moonVideo").style.display = "none";
+
+  document.getElementById(id).style.display = "block";
+}
+</script>
+</body>
+</html>
