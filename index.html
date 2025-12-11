@@ -11,9 +11,12 @@
     video{max-width:90vw;max-height:90vh;width:auto;height:auto;object-fit:contain;display:none}
 
     /* Small numeric buttons in bottom-left corner */
-    .corner-btns{position:fixed;left:10px;bottom:10px;display:flex;flex-direction:column;gap:8px;z-index:999}
-    .num-btn{width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:18px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.9}
+    .corner-btns{position:fixed;left:10px;bottom:10px;display:flex;flex-direction:row;gap:8px;z-index:999}
+    .col{display:flex;flex-direction:column;gap:8px}
+    .num-btn{width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:18px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.95}
     .num-btn:active{transform:scale(0.98)}
+    .off-btn{min-width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.95}
+    .off-btn:active{transform:scale(0.98)}
 
     /* Visually hide everything else if accidentally present */
     header,footer,.note,.controls,.raw,.manual,.status{display:none}
@@ -28,12 +31,18 @@
     <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
   </div>
 
+  <!-- Buttons: vertical column of numbers + OFF to the right (minimal, black) -->
   <div class="corner-btns" aria-hidden="false">
-    <button class="num-btn" data-cmd="snow" aria-label="1">1</button>
-    <button class="num-btn" data-cmd="cloud" aria-label="2">2</button>
-    <button class="num-btn" data-cmd="fire" aria-label="3">3</button>
-    <button class="num-btn" data-cmd="moon" aria-label="4">4</button>
-    <button class="num-btn" data-cmd="sun" aria-label="5">5</button>
+    <div class="col">
+      <button class="num-btn" data-cmd="snow" aria-label="1">1</button>
+      <button class="num-btn" data-cmd="cloud" aria-label="2">2</button>
+      <button class="num-btn" data-cmd="fire" aria-label="3">3</button>
+      <button class="num-btn" data-cmd="moon" aria-label="4">4</button>
+      <button class="num-btn" data-cmd="sun" aria-label="5">5</button>
+    </div>
+    <div class="col" style="align-items:flex-start;">
+      <button class="off-btn" id="offBtn" aria-label="OFF">OFF</button>
+    </div>
   </div>
 
   <script>
@@ -47,7 +56,10 @@
 
     // Hide all videos
     function hideAll(){
-      Object.values(videos).forEach(v=>{ try{ v.pause(); }catch{} v.style.display='none'; });
+      Object.values(videos).forEach(v=>{
+        try{ v.pause(); }catch{}
+        v.style.display='none';
+      });
     }
 
     // Play video by name
@@ -62,26 +74,41 @@
       hideAll();
       v.style.display='block';
       v.currentTime = 0;
-      // try to unmute & play; if blocked, the user should tap a button (this is one)
       v.muted = false;
       v.play().catch(err=>{
-        // if autoplay blocked, keep muted and try again once user interacts
+        // autoplay blocked: fallback to muted playback after user interaction
         v.muted = true;
         console.warn('Autoplay blocked:', err);
       });
     }
 
+    // Stop / OFF
+    function stopAll(){
+      hideAll();
+    }
+
+    // Unlock autoplay on first interaction by briefly playing muted videos
+    let unlocked = false;
+    function unlockAutoplay(){
+      if(unlocked) return;
+      unlocked = true;
+      Object.values(videos).forEach(v => { v.muted = true; v.play().then(()=>v.pause()).catch(()=>{}); });
+    }
+
     // Button listeners
     document.querySelectorAll('.num-btn').forEach(b=>{
       b.addEventListener('click', ()=>{
-        const cmd = b.dataset.cmd;
-        // first interaction: try to unlock by briefly playing muted videos
         unlockAutoplay();
-        play(cmd);
+        play(b.dataset.cmd);
       });
     });
 
-    // Keyboard support 1-5 and 0 to stop
+    document.getElementById('offBtn').addEventListener('click', ()=>{
+      // OFF behavior: stop everything
+      stopAll();
+    });
+
+    // Keyboard support: 1-5 play, 0 stops
     window.addEventListener('keydown',(e)=>{
       if(document.activeElement && (document.activeElement.tagName==='INPUT' || document.activeElement.tagName==='TEXTAREA')) return;
       if(e.key >= '1' && e.key <= '5'){
@@ -89,21 +116,13 @@
         unlockAutoplay();
         play(map[e.key]);
       }
-      if(e.key === '0') play('stop');
+      if(e.key === '0') stopAll();
     });
 
-    // Try to unlock autoplay by playing all videos muted once on first interaction
-    let unlocked = false;
-    function unlockAutoplay(){
-      if(unlocked) return; unlocked = true;
-      Object.values(videos).forEach(v=>{ v.muted = true; v.play().then(()=>v.pause()).catch(()=>{}); });
-    }
-
-    // On load, ensure black background and hide errors
+    // On load: start with black screen
     window.addEventListener('load', ()=>{
       hideAll();
-      // If any video fails to load, that won't break the UI — hologram stays black
-      Object.values(videos).forEach(v=> v.addEventListener('error', ()=>console.warn('Video load error', v.id)));
+      Object.values(videos).forEach(v => v.addEventListener('error', ()=>console.warn('Video load error', v.id)));
     });
   </script>
 </body>
