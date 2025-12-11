@@ -1,63 +1,99 @@
 <!DOCTYPE html>
-<html>
+<html lang="cs">
 <head>
-    <meta charset="UTF-8">
-    <title>Hologram Micro:bit</title>
-    <style>
-        body { 
-            margin: 0; 
-            background: black; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            height: 100vh; 
-        }
-        video {
-            width: 100%;
-            max-width: 500px;
-            display: none;
-        }
-    </style>
+<meta charset="UTF-8">
+<title>Hologram Microbit</title>
+<style>
+    body {
+        margin: 0;
+        background: black;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        color: white;
+        font-family: sans-serif;
+        overflow: hidden;
+    }
+
+    button {
+        margin-top: 20px;
+        padding: 14px 28px;
+        font-size: 20px;
+        border: none;
+        border-radius: 12px;
+        background: #3b82f6;
+        color: white;
+    }
+
+    video {
+        width: 90vw;
+        height: auto;
+        display: none;
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+</style>
 </head>
 <body>
 
-    <video id="snow" src="snow.mp4" loop></video>
-    <video id="cloud" src="cloud.mp4" loop></video>
-    <video id="fire" src="fire.mp4" loop></video>
-    <video id="moon" src="moon.mp4" loop></video>
-    <video id="sun" src="sun.mp4" loop></video>
+<h2>Hologram Microbit</h2>
+<button id="connectBtn">Připojit Microbit</button>
 
-    <script>
-        let videos = {
-            snow: document.getElementById("snow"),
-            cloud: document.getElementById("cloud"),
-            fire: document.getElementById("fire"),
-            moon: document.getElementById("moon"),
-            sun: document.getElementById("sun")
-        };
+<!-- VIDEA -->
+<video id="snow" src="snow.mp4" loop></video>
+<video id="cloud" src="cloud.mp4" loop></video>
+<video id="fire" src="fire.mp4" loop></video>
+<video id="moon" src="moon.mp4" loop></video>
+<video id="sun" src="sun.mp4" loop></video>
 
-        function showVideo(name) {
-            for (let v in videos) {
-                videos[v].pause();
-                videos[v].style.display = "none";
-            }
-            videos[name].style.display = "block";
-            videos[name].play();
-        }
+<script>
+let device;
+let reader;
 
-        // Micro:bit Bluetooth UART
-        navigator.bluetooth.requestDevice({
-            filters: [{ services: ["uart"] }]
-        }).then(device => device.gatt.connect())
-        .then(server => server.getPrimaryService("uart"))
-        .then(service => service.getCharacteristic("uart_rx"))
-        .then(characteristic => {
-            characteristic.startNotifications();
-            characteristic.addEventListener("characteristicvaluechanged", event => {
-                let text = new TextDecoder().decode(event.target.value);
-                showVideo(text.trim());
-            });
+//skryje všechna videa
+function hideAllVideos() {
+    document.querySelectorAll("video").forEach(v => {
+        v.pause();
+        v.style.display = "none";
+    });
+}
+
+//přehraje správné video
+function playVideo(name) {
+    hideAllVideos();
+    let vid = document.getElementById(name);
+    if (vid) {
+        vid.style.display = "block";
+        vid.play();
+    }
+}
+
+document.getElementById("connectBtn").onclick = async () => {
+    try {
+        device = await navigator.bluetooth.requestDevice({
+            filters: [{ namePrefix: "BBC micro:bit" }],
+            optionalServices: ["6e400001-b5a3-f393-e0a9-e50e24dcca9e"]
         });
-    </script>
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+        const characteristic = await service.getCharacteristic("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
+
+        characteristic.startNotifications();
+        characteristic.addEventListener("characteristicvaluechanged", event => {
+            let text = new TextDecoder().decode(event.target.value).trim();
+            playVideo(text);
+        });
+
+        alert("Microbit připojen!");
+
+    } catch (e) {
+        alert("Připojení se nepodařilo: " + e);
+    }
+};
+</script>
+
 </body>
 </html>
