@@ -10,9 +10,8 @@
     .video-frame{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
     video{max-width:90vw;max-height:90vh;width:auto;height:auto;object-fit:contain;display:none}
 
-    /* Small numeric buttons in bottom-left corner */
-    .corner-btns{position:fixed;left:10px;bottom:10px;display:flex;flex-direction:row;gap:8px;z-index:999}
-    .col{display:flex;flex-direction:column;gap:8px}
+    /* Small numeric buttons in bottom-left corner, single row */
+    .corner-btns{position:fixed;left:10px;bottom:10px;display:flex;flex-direction:row;gap:8px;align-items:center;z-index:999}
     .num-btn{width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:18px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.95}
     .num-btn:active{transform:scale(0.98)}
     .off-btn{min-width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.95}
@@ -31,18 +30,14 @@
     <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
   </div>
 
-  <!-- Buttons: vertical column of numbers + OFF to the right (minimal, black) -->
+  <!-- Buttons: single row of numbers + OFF -->
   <div class="corner-btns" aria-hidden="false">
-    <div class="col">
-      <button class="num-btn" data-cmd="snow" aria-label="1">1</button>
-      <button class="num-btn" data-cmd="cloud" aria-label="2">2</button>
-      <button class="num-btn" data-cmd="fire" aria-label="3">3</button>
-      <button class="num-btn" data-cmd="moon" aria-label="4">4</button>
-      <button class="num-btn" data-cmd="sun" aria-label="5">5</button>
-    </div>
-    <div class="col" style="align-items:flex-start;">
-      <button class="off-btn" id="offBtn" aria-label="OFF">OFF</button>
-    </div>
+    <button class="num-btn" data-cmd="snow" aria-label="1">1</button>
+    <button class="num-btn" data-cmd="cloud" aria-label="2">2</button>
+    <button class="num-btn" data-cmd="fire" aria-label="3">3</button>
+    <button class="num-btn" data-cmd="moon" aria-label="4">4</button>
+    <button class="num-btn" data-cmd="sun" aria-label="5">5</button>
+    <button class="off-btn" id="offBtn" aria-label="OFF">OFF</button>
   </div>
 
   <script>
@@ -104,7 +99,6 @@
     });
 
     document.getElementById('offBtn').addEventListener('click', ()=>{
-      // OFF behavior: stop everything
       stopAll();
     });
 
