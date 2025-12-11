@@ -1,99 +1,154 @@
-<!DOCTYPE html>
-<html lang="cs">
-<head>
-<meta charset="UTF-8">
-<title>Hologram Microbit</title>
-<style>
-    body {
-        margin: 0;
-        background: black;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        color: white;
-        font-family: sans-serif;
-        overflow: hidden;
-    }
+<div class="video-container" aria-live="polite">
+    <video id="snow" src="snow.mp4" loop muted playsinline preload="auto"></video>
+    <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
+    <video id="fire" src="fire.mp4" loop muted playsinline preload="auto"></video>
+    <video id="moon" src="moon.mp4" loop muted playsinline preload="auto"></video>
+    <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
+</div>
 
-    button {
-        margin-top: 20px;
-        padding: 14px 28px;
-        font-size: 20px;
-        border: none;
-        border-radius: 12px;
-        background: #3b82f6;
-        color: white;
-    }
-
-    video {
-        width: 90vw;
-        height: auto;
-        display: none;
-        position: absolute;
-        top: 50%;
-        transform: translateY(-50%);
-    }
-
-</style>
-</head>
-<body>
-
-<h2>Hologram Microbit</h2>
-<button id="connectBtn">Připojit Microbit</button>
-
-<!-- VIDEA -->
-<video id="snow" src="snow.mp4" loop></video>
-<video id="cloud" src="cloud.mp4" loop></video>
-<video id="fire" src="fire.mp4" loop></video>
-<video id="moon" src="moon.mp4" loop></video>
-<video id="sun" src="sun.mp4" loop></video>
+<div class="note">
+    Po kliknutí na "Připojit Micro:bit" udělíš prohlížeči přístup k zařízení. Micro:bit musí vysílat textové příkazy přes Nordic UART (NUS). Platné příkazy: "snow", "cloud", "fire", "moon", "sun". Pro ukončení přehrávání pošli "stop" nebo "none".
+</div>
 
 <script>
-let device;
-let reader;
+    // Nordic UART Service (NUS) UUID a characteristicy
+    const NUS_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const NUS_TX_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // notify from device -> client
 
-//skryje všechna videa
-function hideAllVideos() {
-    document.querySelectorAll("video").forEach(v => {
-        v.pause();
-        v.style.display = "none";
-    });
-}
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const statusEl = document.getElementById('status');
 
-//přehraje správné video
-function playVideo(name) {
-    hideAllVideos();
-    let vid = document.getElementById(name);
-    if (vid) {
-        vid.style.display = "block";
-        vid.play();
-    }
-}
+    const videos = {
+        snow: document.getElementById('snow'),
+        cloud: document.getElementById('cloud'),
+        fire: document.getElementById('fire'),
+        moon: document.getElementById('moon'),
+        sun: document.getElementById('sun')
+    };
 
-document.getElementById("connectBtn").onclick = async () => {
-    try {
-        device = await navigator.bluetooth.requestDevice({
-            filters: [{ namePrefix: "BBC micro:bit" }],
-            optionalServices: ["6e400001-b5a3-f393-e0a9-e50e24dcca9e"]
+    function hideAllVideos() {
+        Object.values(videos).forEach(v => {
+            try { v.pause(); } catch(e){}
+            v.style.display = 'none';
         });
-
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-        const characteristic = await service.getCharacteristic("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
-
-        characteristic.startNotifications();
-        characteristic.addEventListener("characteristicvaluechanged", event => {
-            let text = new TextDecoder().decode(event.target.value).trim();
-            playVideo(text);
-        });
-
-        alert("Microbit připojen!");
-
-    } catch (e) {
-        alert("Připojení se nepodařilo: " + e);
     }
-};
+
+    function playVideo(name) {
+        name = (name || '').toLowerCase().trim();
+        if (!name || name === 'stop' || name === 'none') {
+            hideAllVideos();
+            statusEl.textContent = 'Připojeno — čekám na příkazy (vypnuto)';
+            return;
+        }
+        if (!videos[name]) {
+            statusEl.textContent = 'Neznámý příkaz: ' + name;
+            return;
+        }
+        hideAllVideos();
+        const v = videos[name];
+        v.style.display = 'block';
+        // play may return a promise
+        v.currentTime = 0;
+        v.play().catch(err => {
+            // pokud prohlížeč zablokuje autoplay, informujeme uživatele
+            console.warn('Play failed:', err);
+            statusEl.textContent = 'Chyba přehrávání: ' + (err && err.message ? err.message : err);
+        });
+        statusEl.textContent = 'Přehrávám: ' + name;
+    }
+
+    let device = null;
+    let server = null;
+    let txChar = null;
+    const decoder = new TextDecoder();
+
+    async function connectMicrobit() {
+        if (!navigator.bluetooth) {
+            alert('Web Bluetooth není v tomto prohlížeči dostupný.');
+            return;
+        }
+
+        try {
+            statusEl.textContent = 'Výběr zařízení...';
+            device = await navigator.bluetooth.requestDevice({
+                filters: [{ namePrefix: 'BBC micro:bit' }],
+                optionalServices: [NUS_SERVICE_UUID]
+            });
+
+            device.addEventListener('gattserverdisconnected', onDisconnected);
+
+            statusEl.textContent = 'Připojuji k zařízení...';
+            server = await device.gatt.connect();
+
+            const service = await server.getPrimaryService(NUS_SERVICE_UUID);
+            txChar = await service.getCharacteristic(NUS_TX_CHAR_UUID);
+
+            await txChar.startNotifications();
+            txChar.addEventListener('characteristicvaluechanged', handleNotifications);
+
+            connectBtn.disabled = true;
+            disconnectBtn.disabled = false;
+            statusEl.textContent = 'Micro:bit připojen — čekám na příkazy';
+        } catch (err) {
+            console.error(err);
+            statusEl.textContent = 'Připojení selhalo: ' + (err && err.message ? err.message : err);
+            device = null;
+            server = null;
+            txChar = null;
+        }
+    }
+
+    function handleNotifications(event) {
+        // event.target.value is a DataView
+        const value = event.target.value;
+        let text;
+        try {
+            // DataView supports buffer property
+            text = decoder.decode(value.buffer ? value.buffer : value);
+        } catch (e) {
+            console.warn('Decode failed, trying fallback', e);
+            try { text = String.fromCharCode.apply(null, new Uint8Array(value.buffer)); } catch(e2) { text = ''; }
+        }
+        text = (text || '').trim();
+        if (!text) return;
+        // some devices send trailing newline, so split and take first token
+        const token = text.split(/\s+/)[0].toLowerCase();
+        playVideo(token);
+    }
+
+    function onDisconnected() {
+        statusEl.textContent = 'Micro:bit odpojen';
+        connectBtn.disabled = false;
+        disconnectBtn.disabled = true;
+        hideAllVideos();
+    }
+
+    async function disconnectMicrobit() {
+        try {
+            if (txChar) {
+                try { await txChar.stopNotifications(); } catch(e){/*ignore*/ }
+                txChar.removeEventListener('characteristicvaluechanged', handleNotifications);
+                txChar = null;
+            }
+            if (device && device.gatt && device.gatt.connected) {
+                device.gatt.disconnect();
+            }
+        } catch (e) {
+            console.warn('Chyba při odpojení', e);
+        } finally {
+            device = null;
+            server = null;
+            connectBtn.disabled = false;
+            disconnectBtn.disabled = true;
+            statusEl.textContent = 'Odpojeno';
+            hideAllVideos();
+        }
+    }
+
+    connectBtn.addEventListener('click', () => connectMicrobit());
+    disconnectBtn.addEventListener('click', () => disconnectMicrobit());
+
+    // volitelně: povolit kliknutím test přehrání (pro debug)
+    // document.body.addEventListener('click', () => Object.values(videos).forEach(v => v.muted = true), { once: true });
 </script>
-
-</body>
-</html>
