@@ -3,13 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hologram — minimal (with crossfade)</title>
+  <title>Hologram — minimal (crossfade short)</title>
   <style>
-    /* Full-black hologram style: only video and small numeric buttons visible */
     html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,Arial,Helvetica,sans-serif}
     .video-frame{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
 
-    /* Videos stacked and centered; opacity used for crossfade */
+    /* Videos stacked and centered; opacity used for crossfade (krátký fade) */
     .video-frame video{
       position:absolute;
       left:50%;
@@ -21,11 +20,12 @@
       height:auto;
       object-fit:contain;
       opacity:0;
-      transition: opacity 600ms ease;
+      transition: opacity 250ms ease;
       will-change: opacity, transform;
       z-index:1;
       pointer-events:none;
       display:block;
+      background:transparent;
     }
     .video-frame video.show{
       opacity:1;
@@ -34,13 +34,13 @@
     }
 
     /* Small buttons in bottom-left corner, single row */
-    .corner-btns{position:absolute;left:10px;bottom:10px;display:flex;flex-direction:row;gap:8px;align-items:center;z-index:999999;pointer-events:auto}
+    .corner-btns{position:absolute;left:10px;bottom:10px;display:flex;flex-direction:row;gap:8px;align-items:center;z-index:2147483647;pointer-events:auto}
     .num-btn{width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:18px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.95}
     .num-btn:active{transform:scale(0.98)}
     .action-btn{min-width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.95}
     .action-btn:active{transform:scale(0.98)}
 
-    /* Ensure buttons remain visible in fullscreen */
+    /* Keep buttons visible in fullscreen */
     :fullscreen .corner-btns, :-webkit-full-screen .corner-btns, :-moz-full-screen .corner-btns {
       position: fixed;
       left: 10px;
@@ -48,7 +48,6 @@
       z-index: 2147483647;
     }
 
-    /* Visually hide everything else if accidentally present */
     header,footer,.note,.controls,.raw,.manual,.status{display:none}
   </style>
 </head>
@@ -60,7 +59,6 @@
     <video id="moon" src="moon.mp4" loop muted playsinline preload="auto"></video>
     <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
 
-    <!-- Buttons: single row of numbers + OFF + Fullscreen toggle -->
     <div class="corner-btns" aria-hidden="false">
       <button class="num-btn" data-cmd="snow" aria-label="1">1</button>
       <button class="num-btn" data-cmd="cloud" aria-label="2">2</button>
@@ -82,91 +80,98 @@
     };
     const fsBtn = document.getElementById('fsBtn');
 
-    let current = null;          // id of current visible video
-    let transitioning = false;   // avoid overlapping transitions
-    const FADE_TIME = 600;       // ms, should match CSS transition
+    let current = null;
+    let transitioning = false;
+    const FADE_TIME = 250; // short fade
 
-    // Ensure all videos are paused initially
-    Object.values(videos).forEach(v => { v.pause(); v.style.opacity = 0; });
-
-    function hideAllImmediate() {
-      Object.values(videos).forEach(v => {
-        try { v.pause(); } catch {}
+    // Start state: hide all
+    function hideAllImmediate(){
+      Object.values(videos).forEach(v=>{
+        try{ v.pause(); }catch{}
         v.classList.remove('show');
         v.style.display = 'none';
       });
       current = null;
     }
 
-    // Crossfade play
-    async function play(name) {
-      name = (name || '').toString().trim().toLowerCase();
-      if (!name || name === 'stop' || name === 'none') {
-        stopAll();
-        return;
-      }
+    // Helper: play safely (wait for metadata if needed)
+    function safePlayStart(v){
+      return new Promise((resolve)=> {
+        if (v.readyState >= 2) { // HAVE_CURRENT_DATA
+          try { v.currentTime = 0; } catch(e) { /* ignore */ }
+          v.play().then(()=>resolve()).catch(()=>resolve());
+        } else {
+          const onMeta = () => {
+            try { v.currentTime = 0; } catch(e) {}
+            v.play().then(()=>{}).catch(()=>{}); // try play, but resolve anyway
+            v.removeEventListener('loadedmetadata', onMeta);
+            // small timeout to let play() start
+            setTimeout(()=>resolve(), 50);
+          };
+          v.addEventListener('loadedmetadata', onMeta);
+          // as fallback, resolve after a short delay
+          setTimeout(()=>resolve(), 800);
+        }
+      });
+    }
+
+    // Crossfade to named video
+    async function play(name){
+      name = (name||'').toString().trim().toLowerCase();
+      if (!name || name === 'stop' || name === 'none') { stopAll(); return; }
       if (transitioning) return;
       if (current === name) return;
-
       const next = videos[name];
       if (!next) return;
 
       transitioning = true;
-      // prepare next video
       next.style.display = 'block';
-      next.classList.remove('show'); // ensure starting from opacity 0
-      next.currentTime = 0;
+      next.classList.remove('show');
       next.muted = false;
 
-      // try to play (may be blocked -> fallback to muted)
-      try {
-        await next.play();
-      } catch (err) {
-        next.muted = true;
-        try { await next.play(); } catch(e){ /* ignore */ }
-      }
+      await safePlayStart(next);
 
-      // force reflow so transition runs reliably
+      // trigger transition
+      // force reflow
       void next.offsetWidth;
-
-      // fade in next
       next.classList.add('show');
 
-      // fade out previous (if exists)
+      // fade out previous
       if (current && videos[current]) {
         const prev = videos[current];
         prev.classList.remove('show');
         // after transition, pause and hide prev
-        const onPrevEnd = () => {
-          try { prev.pause(); } catch {}
+        const cleanup = () => {
+          try{ prev.pause(); } catch(e){}
           prev.style.display = 'none';
-          prev.removeEventListener('transitionend', onPrevEnd);
+          prev.removeEventListener('transitionend', cleanup);
         };
-        prev.addEventListener('transitionend', onPrevEnd);
+        prev.addEventListener('transitionend', cleanup);
       }
 
-      // wait for fade duration then finish
-      setTimeout(() => {
+      // finish after FADE_TIME
+      setTimeout(()=>{
         current = name;
         transitioning = false;
       }, FADE_TIME + 50);
     }
 
-    function stopAll() {
+    function stopAll(){
       if (transitioning) return;
       if (current && videos[current]) {
         const prev = videos[current];
         prev.classList.remove('show');
-        prev.addEventListener('transitionend', function handler(){
-          try{ prev.pause(); }catch{}
+        const cleanup = () => {
+          try{ prev.pause(); } catch(e){}
           prev.style.display = 'none';
-          prev.removeEventListener('transitionend', handler);
-        }, { once: true });
+          prev.removeEventListener('transitionend', cleanup);
+        };
+        prev.addEventListener('transitionend', cleanup);
       }
       current = null;
     }
 
-    // Unlock autoplay on first interaction by briefly playing muted videos
+    // Unlock autoplay on first interaction
     let unlocked = false;
     function unlockAutoplay(){
       if (unlocked) return;
@@ -174,25 +179,19 @@
       Object.values(videos).forEach(v => { v.muted = true; v.play().then(()=>v.pause()).catch(()=>{}); });
     }
 
-    // Button listeners for numbers
-    document.querySelectorAll('.num-btn').forEach(b => {
-      b.addEventListener('click', () => {
+    // Buttons
+    document.querySelectorAll('.num-btn').forEach(b=>{
+      b.addEventListener('click', ()=>{
         unlockAutoplay();
         play(b.dataset.cmd);
       });
     });
+    document.getElementById('offBtn').addEventListener('click', ()=> stopAll());
 
-    // OFF button
-    document.getElementById('offBtn').addEventListener('click', () => {
-      stopAll();
-    });
-
-    // Fullscreen toggle: single button for enter/exit fullscreen
+    // Fullscreen toggle
     const fsTarget = document.querySelector('.video-frame') || document.documentElement;
-    function isFullscreen() {
-      return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
-    }
-    async function toggleFullscreen() {
+    function isFullscreen(){ return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement); }
+    async function toggleFullscreen(){
       try {
         if (!isFullscreen()) {
           if (fsTarget.requestFullscreen) await fsTarget.requestFullscreen();
@@ -209,20 +208,14 @@
         console.warn('Fullscreen toggle failed', err);
       }
     }
-
-    function updateFsButton() { fsBtn.textContent = isFullscreen() ? 'EXIT' : 'FS'; }
+    function updateFsButton(){ fsBtn.textContent = isFullscreen() ? 'EXIT' : 'FS'; }
     document.addEventListener('fullscreenchange', updateFsButton);
     document.addEventListener('webkitfullscreenchange', updateFsButton);
     document.addEventListener('mozfullscreenchange', updateFsButton);
     document.addEventListener('MSFullscreenChange', updateFsButton);
+    fsBtn.addEventListener('click', async () => { unlockAutoplay(); await toggleFullscreen(); updateFsButton(); });
 
-    fsBtn.addEventListener('click', async () => {
-      unlockAutoplay();
-      await toggleFullscreen();
-      updateFsButton();
-    });
-
-    // Keyboard support: 1-5 play, 0 stops, f toggles fullscreen
+    // Keyboard
     window.addEventListener('keydown', (e) => {
       if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
       if (e.key >= '1' && e.key <= '5') {
@@ -234,11 +227,10 @@
       if (e.key.toLowerCase() === 'f') toggleFullscreen();
     });
 
-    // On load: start with black screen
     window.addEventListener('load', () => {
       hideAllImmediate();
       updateFsButton();
-      Object.values(videos).forEach(v => v.addEventListener('error', () => console.warn('Video load error', v.id)));
+      Object.values(videos).forEach(v => v.addEventListener('error', ()=>console.warn('Video load error', v.id)));
     });
   </script>
 </body>
