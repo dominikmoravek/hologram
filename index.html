@@ -1,237 +1,168 @@
 <!doctype html>
 <html lang="cs">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hologram — minimal (crossfade short)</title>
+  <meta charset="utf-8">
+  <title>Micro:bit -> Video (teplota / světlo)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,Arial,Helvetica,sans-serif}
-    .video-frame{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
-
-    /* Videos stacked and centered; opacity used for crossfade (krátký fade) */
-    .video-frame video{
-      position:absolute;
-      left:50%;
-      top:50%;
-      transform:translate(-50%,-50%);
-      max-width:90vw;
-      max-height:90vh;
-      width:auto;
-      height:auto;
-      object-fit:contain;
-      opacity:0;
-      transition: opacity 250ms ease;
-      will-change: opacity, transform;
-      z-index:1;
-      pointer-events:none;
-      display:block;
-      background:transparent;
+    body { font-family: system-ui, Arial; text-align:center; padding:24px; }
+    #status { margin: 12px 0; color:#333; }
+    #current { font-weight:700; margin:8px 0; }
+    button { padding:10px 16px; font-size:16px; cursor:pointer; }
+    .controls {
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      align-items:center;
+      margin: 16px auto;
+      width: 220px; /* vycentruje sloupec tlačítek */
     }
-    .video-frame video.show{
-      opacity:1;
-      z-index:2;
-      pointer-events:auto;
-    }
-
-    /* Small buttons in bottom-left corner, single row */
-    .corner-btns{position:absolute;left:10px;bottom:10px;display:flex;flex-direction:row;gap:8px;align-items:center;z-index:2147483647;pointer-events:auto}
-    .num-btn{width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:18px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.95}
-    .num-btn:active{transform:scale(0.98)}
-    .action-btn{min-width:44px;height:44px;border-radius:6px;border:none;background:#000;color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0.95}
-    .action-btn:active{transform:scale(0.98)}
-
-    /* Keep buttons visible in fullscreen */
-    :fullscreen .corner-btns, :-webkit-full-screen .corner-btns, :-moz-full-screen .corner-btns {
-      position: fixed;
-      left: 10px;
-      bottom: 10px;
-      z-index: 2147483647;
-    }
-
-    header,footer,.note,.controls,.raw,.manual,.status{display:none}
+    .videos { margin-top:16px; display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+    video { width:320px; max-width:45vw; display:none; border-radius:8px; background:#000; }
+    #log { margin-top:12px; font-size:13px; color:#555; max-width:800px; margin-left:auto; margin-right:auto; text-align:left; }
+    .small { font-size:13px; color:#666; }
   </style>
 </head>
 <body>
-  <div class="video-frame" aria-live="polite">
-    <video id="snow" src="snow.mp4" loop muted playsinline preload="auto"></video>
-    <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
-    <video id="fire" src="fire.mp4" loop muted playsinline preload="auto"></video>
-    <video id="moon" src="moon.mp4" loop muted playsinline preload="auto"></video>
-    <video id="sun" src="sun.mp4" loop muted playsinline preload="auto"></video>
+  <h1>Micro:bit -> přehrávač videí</h1>
+  <div id="status">Stav: čekám na připojení</div>
 
-    <div class="corner-btns" aria-hidden="false">
-      <button class="num-btn" data-cmd="snow" aria-label="1">1</button>
-      <button class="num-btn" data-cmd="cloud" aria-label="2">2</button>
-      <button class="num-btn" data-cmd="fire" aria-label="3">3</button>
-      <button class="num-btn" data-cmd="moon" aria-label="4">4</button>
-      <button class="num-btn" data-cmd="sun" aria-label="5">5</button>
-      <button class="action-btn" id="offBtn" aria-label="OFF">OFF</button>
-      <button class="action-btn" id="fsBtn" aria-label="Fullscreen">FS</button>
-    </div>
+  <div class="controls">
+    <button id="connectBtn">Připojit Micro:bit</button>
+    <button data-cmd="snow">Sněhová vločka (snow)</button>
+    <button data-cmd="cloud">Mrak (cloud)</button>
+    <button data-cmd="fire">Oheň (fire)</button>
+    <button data-cmd="moon">Měsíc (moon)</button>
+    <button data-cmd="sun">Slunce (sun)</button>
   </div>
 
-  <script>
-    const videos = {
-      snow: document.getElementById('snow'),
-      cloud: document.getElementById('cloud'),
-      fire: document.getElementById('fire'),
-      moon: document.getElementById('moon'),
-      sun: document.getElementById('sun')
-    };
-    const fsBtn = document.getElementById('fsBtn');
+  <div id="current" class="small">Aktuální příkaz: <span id="cmd">—</span></div>
 
-    let current = null;
-    let transitioning = false;
-    const FADE_TIME = 250; // short fade
+  <div class="videos">
+    <video id="video-snow" src="snow.mp4" loop muted playsinline></video>
+    <video id="video-cloud" src="cloud.mp4" loop muted playsinline></video>
+    <video id="video-fire" src="fire.mp4" loop muted playsinline></video>
+    <video id="video-moon" src="moon.mp4" loop muted playsinline></video>
+    <video id="video-sun" src="sun.mp4" loop muted playsinline></video>
+  </div>
 
-    // Start state: hide all
-    function hideAllImmediate(){
-      Object.values(videos).forEach(v=>{
-        try{ v.pause(); }catch{}
-        v.classList.remove('show');
-        v.style.display = 'none';
-      });
-      current = null;
+  <div id="log" aria-live="polite"></div>
+
+<script>
+const UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const UART_RX_CHAR = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+const cmdEl = document.getElementById('cmd');
+
+const videos = {
+  snow: document.getElementById('video-snow'),
+  cloud: document.getElementById('video-cloud'),
+  fire: document.getElementById('video-fire'),
+  moon: document.getElementById('video-moon'),
+  sun: document.getElementById('video-sun')
+};
+
+let btDevice = null;
+let rxChar = null;
+let buffer = '';
+
+function log(msg) {
+  const now = new Date().toLocaleTimeString();
+  logEl.innerHTML = `<div>[${now}] ${msg.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>` + logEl.innerHTML;
+}
+
+function showVideo(key) {
+  if (!videos[key]) { log('Neznámý příkaz: ' + key); return; }
+  cmdEl.textContent = key;
+  Object.entries(videos).forEach(([k, el]) => {
+    if (k === key) {
+      el.style.display = 'block';
+      el.play().catch(e => log('Play failed: '+e));
+    } else {
+      el.pause();
+      el.currentTime = 0;
+      el.style.display = 'none';
     }
+  });
+  log('Přepnuto na video: ' + key);
+}
 
-    // Helper: play safely (wait for metadata if needed)
-    function safePlayStart(v){
-      return new Promise((resolve)=> {
-        if (v.readyState >= 2) { // HAVE_CURRENT_DATA
-          try { v.currentTime = 0; } catch(e) { /* ignore */ }
-          v.play().then(()=>resolve()).catch(()=>resolve());
-        } else {
-          const onMeta = () => {
-            try { v.currentTime = 0; } catch(e) {}
-            v.play().then(()=>{}).catch(()=>{}); // try play, but resolve anyway
-            v.removeEventListener('loadedmetadata', onMeta);
-            // small timeout to let play() start
-            setTimeout(()=>resolve(), 50);
-          };
-          v.addEventListener('loadedmetadata', onMeta);
-          // as fallback, resolve after a short delay
-          setTimeout(()=>resolve(), 800);
-        }
-      });
-    }
-
-    // Crossfade to named video
-    async function play(name){
-      name = (name||'').toString().trim().toLowerCase();
-      if (!name || name === 'stop' || name === 'none') { stopAll(); return; }
-      if (transitioning) return;
-      if (current === name) return;
-      const next = videos[name];
-      if (!next) return;
-
-      transitioning = true;
-      next.style.display = 'block';
-      next.classList.remove('show');
-      next.muted = false;
-
-      await safePlayStart(next);
-
-      // trigger transition
-      // force reflow
-      void next.offsetWidth;
-      next.classList.add('show');
-
-      // fade out previous
-      if (current && videos[current]) {
-        const prev = videos[current];
-        prev.classList.remove('show');
-        // after transition, pause and hide prev
-        const cleanup = () => {
-          try{ prev.pause(); } catch(e){}
-          prev.style.display = 'none';
-          prev.removeEventListener('transitionend', cleanup);
-        };
-        prev.addEventListener('transitionend', cleanup);
-      }
-
-      // finish after FADE_TIME
-      setTimeout(()=>{
-        current = name;
-        transitioning = false;
-      }, FADE_TIME + 50);
-    }
-
-    function stopAll(){
-      if (transitioning) return;
-      if (current && videos[current]) {
-        const prev = videos[current];
-        prev.classList.remove('show');
-        const cleanup = () => {
-          try{ prev.pause(); } catch(e){}
-          prev.style.display = 'none';
-          prev.removeEventListener('transitionend', cleanup);
-        };
-        prev.addEventListener('transitionend', cleanup);
-      }
-      current = null;
-    }
-
-    // Unlock autoplay on first interaction
-    let unlocked = false;
-    function unlockAutoplay(){
-      if (unlocked) return;
-      unlocked = true;
-      Object.values(videos).forEach(v => { v.muted = true; v.play().then(()=>v.pause()).catch(()=>{}); });
-    }
-
-    // Buttons
-    document.querySelectorAll('.num-btn').forEach(b=>{
-      b.addEventListener('click', ()=>{
-        unlockAutoplay();
-        play(b.dataset.cmd);
-      });
+async function connect() {
+  try {
+    statusEl.textContent = 'Stav: vyžádání zařízení...';
+    btDevice = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [UART_SERVICE]
     });
-    document.getElementById('offBtn').addEventListener('click', ()=> stopAll());
-
-    // Fullscreen toggle
-    const fsTarget = document.querySelector('.video-frame') || document.documentElement;
-    function isFullscreen(){ return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement); }
-    async function toggleFullscreen(){
-      try {
-        if (!isFullscreen()) {
-          if (fsTarget.requestFullscreen) await fsTarget.requestFullscreen();
-          else if (fsTarget.webkitRequestFullscreen) await fsTarget.webkitRequestFullscreen();
-          else if (fsTarget.mozRequestFullScreen) await fsTarget.mozRequestFullScreen();
-          else if (fsTarget.msRequestFullscreen) await fsTarget.msRequestFullscreen();
-        } else {
-          if (document.exitFullscreen) await document.exitFullscreen();
-          else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
-          else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
-          else if (document.msExitFullscreen) await document.msExitFullscreen();
-        }
-      } catch (err) {
-        console.warn('Fullscreen toggle failed', err);
-      }
-    }
-    function updateFsButton(){ fsBtn.textContent = isFullscreen() ? 'EXIT' : 'FS'; }
-    document.addEventListener('fullscreenchange', updateFsButton);
-    document.addEventListener('webkitfullscreenchange', updateFsButton);
-    document.addEventListener('mozfullscreenchange', updateFsButton);
-    document.addEventListener('MSFullscreenChange', updateFsButton);
-    fsBtn.addEventListener('click', async () => { unlockAutoplay(); await toggleFullscreen(); updateFsButton(); });
-
-    // Keyboard
-    window.addEventListener('keydown', (e) => {
-      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
-      if (e.key >= '1' && e.key <= '5') {
-        const map = { '1':'snow','2':'cloud','3':'fire','4':'moon','5':'sun' };
-        unlockAutoplay();
-        play(map[e.key]);
-      }
-      if (e.key === '0') stopAll();
-      if (e.key.toLowerCase() === 'f') toggleFullscreen();
+    statusEl.textContent = 'Stav: připojuji...';
+    const server = await btDevice.gatt.connect();
+    const service = await server.getPrimaryService(UART_SERVICE);
+    rxChar = await service.getCharacteristic(UART_RX_CHAR);
+    await rxChar.startNotifications();
+    rxChar.addEventListener('characteristicvaluechanged', handleNotification);
+    statusEl.textContent = 'Stav: připojeno — naslouchám UART';
+    log('Připojeno k: ' + (btDevice.name || btDevice.id));
+    btDevice.addEventListener('gattserverdisconnected', () => {
+      statusEl.textContent = 'Stav: odpojeno';
+      log('Zařízení odpojeno');
     });
+  } catch (err) {
+    statusEl.textContent = 'Chyba připojení';
+    log('Chyba: ' + err);
+  }
+}
 
-    window.addEventListener('load', () => {
-      hideAllImmediate();
-      updateFsButton();
-      Object.values(videos).forEach(v => v.addEventListener('error', ()=>console.warn('Video load error', v.id)));
-    });
-  </script>
+function handleNotification(e) {
+  const text = new TextDecoder().decode(e.target.value);
+  buffer += text;
+  const parts = buffer.split(/[\r\n]+/);
+  buffer = parts.pop() || '';
+  for (const p of parts) {
+    const token = p.trim().toLowerCase();
+    if (!token) continue;
+    processToken(token);
+  }
+  const maybe = buffer.trim().toLowerCase();
+  if (maybe && /^(snow|cloud|fire|moon|sun)$/.test(maybe)) {
+    processToken(maybe);
+    buffer = '';
+  }
+}
+
+function processToken(token) {
+  log('Příchozí token: ' + token);
+  switch (token) {
+    case 'snow': showVideo('snow'); break;
+    case 'cloud': showVideo('cloud'); break;
+    case 'fire': showVideo('fire'); break;
+    case 'moon': showVideo('moon'); break;
+    case 'sun': showVideo('sun'); break;
+    default: log('Neznámý token: ' + token);
+  }
+}
+
+document.getElementById('connectBtn').addEventListener('click', async () => {
+  if (!navigator.bluetooth) {
+    statusEl.textContent = 'WebBluetooth není v tomto prohlížeči podporován.';
+    log('Použij Chrome nebo Edge na desktopu / Androidu.');
+    return;
+  }
+  await connect();
+});
+
+// manuální tlačítka (ve sloupci)
+document.querySelectorAll('.controls button[data-cmd]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const cmd = btn.getAttribute('data-cmd');
+    showVideo(cmd);
+  });
+});
+
+window.addEventListener('beforeunload', () => {
+  if (btDevice && btDevice.gatt.connected) btDevice.gatt.disconnect();
+});
+</script>
 </body>
 </html>
