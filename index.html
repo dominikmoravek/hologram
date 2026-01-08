@@ -122,15 +122,11 @@
       <video id="snow"  src="snow.mp4"  loop muted playsinline preload="auto"></video>
       <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
       <video id="fire"  src="fire.mp4"  loop muted playsinline preload="auto"></video>
-      <video id="moon"  src="moon.mp4"  loop muted playsinline preload="auto"></video>
-      <video id="sun"   src="sun.mp4"   loop muted playsinline preload="auto"></video>
 
       <div class="corner-btns">
         <button class="num-btn" data-cmd="snow">1</button>
         <button class="num-btn" data-cmd="cloud">2</button>
         <button class="num-btn" data-cmd="fire">3</button>
-        <button class="num-btn" data-cmd="moon">4</button>
-        <button class="num-btn" data-cmd="sun">5</button>
         <button class="action-btn" id="offBtn">OFF</button>
         <button class="action-btn" id="fsBtn">FS</button>
       </div>
@@ -141,9 +137,7 @@
     const videos = {
       snow:  document.getElementById('snow'),
       cloud: document.getElementById('cloud'),
-      fire:  document.getElementById('fire'),
-      moon:  document.getElementById('moon'),
-      sun:   document.getElementById('sun')
+      fire:  document.getElementById('fire')
     };
 
     const fsBtn = document.getElementById('fsBtn');
