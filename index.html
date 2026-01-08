@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hologram — minimal (crossfade short)</title>
+  <title>Hologram — minimal (crossfade short, larger video)</title>
   <style>
     html,body{
       height:100%;
       margin:0;
       background:#000;
       color:#fff;
-      font-family:system-ui,Arial,Helvetica,sans-serif
+      font-family:system-ui,Arial,Helvetica,sans-serif;
     }
 
     .video-frame{
@@ -20,20 +20,24 @@
       align-items:center;
       justify-content:center;
       overflow:hidden;
-      background:#000
+      background:#000;
     }
 
-    /* Videos stacked and centered; opacity used for crossfade */
+    /* Videos stacked and centered; opacity used for crossfade.
+       Increased size: videos slightly bigger than viewport so edges are cropped for stronger hologram effect.
+       Adjust MIN_SCALE_PERCENT to tweak how much bigger the video is (100 = viewport size, 120 = 20% larger). */
+    :root { --min-scale-percent: 120%; }
     .video-frame video{
       position:absolute;
       left:50%;
       top:50%;
       transform:translate(-50%,-50%);
-      max-width:90vw;
-      max-height:90vh;
+      /* use min-width/min-height > 100% so video fills and is slightly scaled up */
+      min-width: var(--min-scale-percent);
+      min-height: var(--min-scale-percent);
       width:auto;
       height:auto;
-      object-fit:contain;
+      object-fit:cover;          /* cover to fill the area and crop edges */
       opacity:0;
       transition: opacity 250ms ease;
       will-change: opacity, transform;
@@ -59,7 +63,7 @@
       gap:8px;
       align-items:center;
       z-index:2147483647;
-      pointer-events:auto
+      pointer-events:auto;
     }
 
     .num-btn{
@@ -75,7 +79,7 @@
       align-items:center;
       justify-content:center;
       cursor:pointer;
-      opacity:0.95
+      opacity:0.95;
     }
 
     .num-btn:active{transform:scale(0.98)}
@@ -93,7 +97,7 @@
       align-items:center;
       justify-content:center;
       cursor:pointer;
-      opacity:0.95
+      opacity:0.95;
     }
 
     .action-btn:active{transform:scale(0.98)}
