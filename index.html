@@ -62,7 +62,7 @@
       bottom:10px;
       display:flex;
       flex-direction:column;
-      gap:8px;
+      gap:16px;                 /* zvětšený odstup mezi tlačítky (dvojnásobek) */
       align-items:center;
       z-index:2147483647;
       pointer-events:auto;
@@ -141,6 +141,8 @@
     };
 
     const fsBtn = document.getElementById('fsBtn');
+    fsBtn.textContent = 'FS'; // vždycky FS
+
     let current = null;
     let transitioning = false;
     const FADE_TIME = 250;
@@ -226,9 +228,13 @@
       }else{
         document.exitFullscreen?.();
       }
-      fsBtn.textContent=document.fullscreenElement?'EXIT':'FS';
+      // nebudeme měnit text; zaručíme, že zůstane "FS" i při změně fullscreenu
+      fsBtn.textContent = 'FS';
     }
     fsBtn.addEventListener('click',toggleFullscreen);
+
+    // pokud uživatel opustí/fullscreenuje jinak (ESC atd.), udržujeme text "FS"
+    document.addEventListener('fullscreenchange', ()=> { fsBtn.textContent = 'FS'; });
 
     window.addEventListener('load',hideAllImmediate);
   </script>
