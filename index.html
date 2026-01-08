@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hologram — minimal (crossfade short, larger video)</title>
+  <title>Hologram — minimal (4:3 crop, crossfade)</title>
   <style>
     html,body{
       height:100%;
@@ -23,37 +23,39 @@
       background:#000;
     }
 
-    /* Videos stacked and centered; opacity used for crossfade.
-       Increased size: videos slightly bigger than viewport so edges are cropped for stronger hologram effect.
-       Adjust MIN_SCALE_PERCENT to tweak how much bigger the video is (100 = viewport size, 120 = 20% larger). */
-    :root { --min-scale-percent: 120%; }
-    .video-frame video{
-      position:absolute;
-      left:50%;
-      top:50%;
-      transform:translate(-50%,-50%);
-      /* use min-width/min-height > 100% so video fills and is slightly scaled up */
-      min-width: var(--min-scale-percent);
-      min-height: var(--min-scale-percent);
-      width:auto;
-      height:auto;
-      object-fit:cover;          /* cover to fill the area and crop edges */
-      opacity:0;
-      transition: opacity 250ms ease;
-      will-change: opacity, transform;
-      z-index:1;
-      pointer-events:none;
+    /* Stage with fixed 4:3 aspect ratio. It will be slightly smaller than full screen.
+       The stage width is the smaller of 90vw and the width that keeps 4:3 for 85vh height.
+       Videos inside use object-fit:cover so sides get cropped to fill 4:3. */
+    .video-stage {
+      width: min(90vw, calc(85vh * 4 / 3));
+      aspect-ratio: 4 / 3;
+      height: auto;
+      position: relative;
       display:block;
-      background:transparent;
+      overflow:hidden;
     }
 
-    .video-frame video.show{
+    /* Videos stacked and centered; opacity used for crossfade (short fade) */
+    .video-stage video{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      object-fit:cover;         /* cover to crop sides and keep 4:3 */
+      opacity:0;
+      transition: opacity 250ms ease;
+      will-change: opacity;
+      z-index:1;
+      pointer-events:none;
+      background:transparent;
+    }
+    .video-stage video.show{
       opacity:1;
       z-index:2;
       pointer-events:auto;
     }
 
-    /* Buttons in bottom-left corner — COLUMN */
+    /* Buttons in bottom-left corner — column */
     .corner-btns{
       position:absolute;
       left:10px;
@@ -67,39 +69,37 @@
     }
 
     .num-btn{
-      width:44px;
-      height:44px;
+      width:40px;
+      height:40px;
       border-radius:6px;
       border:none;
       background:#000;
       color:#fff;
       font-weight:700;
-      font-size:18px;
+      font-size:16px;
       display:inline-flex;
       align-items:center;
       justify-content:center;
       cursor:pointer;
       opacity:0.95;
     }
-
     .num-btn:active{transform:scale(0.98)}
 
     .action-btn{
       min-width:44px;
-      height:44px;
+      height:40px;
       border-radius:6px;
       border:none;
       background:#000;
       color:#fff;
       font-weight:700;
-      font-size:14px;
+      font-size:13px;
       display:inline-flex;
       align-items:center;
       justify-content:center;
       cursor:pointer;
       opacity:0.95;
     }
-
     .action-btn:active{transform:scale(0.98)}
 
     /* Keep buttons visible in fullscreen */
@@ -118,20 +118,22 @@
 
 <body>
   <div class="video-frame" aria-live="polite">
-    <video id="snow"  src="snow.mp4"  loop muted playsinline preload="auto"></video>
-    <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
-    <video id="fire"  src="fire.mp4"  loop muted playsinline preload="auto"></video>
-    <video id="moon"  src="moon.mp4"  loop muted playsinline preload="auto"></video>
-    <video id="sun"   src="sun.mp4"   loop muted playsinline preload="auto"></video>
+    <div class="video-stage">
+      <video id="snow"  src="snow.mp4"  loop muted playsinline preload="auto"></video>
+      <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
+      <video id="fire"  src="fire.mp4"  loop muted playsinline preload="auto"></video>
+      <video id="moon"  src="moon.mp4"  loop muted playsinline preload="auto"></video>
+      <video id="sun"   src="sun.mp4"   loop muted playsinline preload="auto"></video>
 
-    <div class="corner-btns">
-      <button class="num-btn" data-cmd="snow">1</button>
-      <button class="num-btn" data-cmd="cloud">2</button>
-      <button class="num-btn" data-cmd="fire">3</button>
-      <button class="num-btn" data-cmd="moon">4</button>
-      <button class="num-btn" data-cmd="sun">5</button>
-      <button class="action-btn" id="offBtn">OFF</button>
-      <button class="action-btn" id="fsBtn">FS</button>
+      <div class="corner-btns">
+        <button class="num-btn" data-cmd="snow">1</button>
+        <button class="num-btn" data-cmd="cloud">2</button>
+        <button class="num-btn" data-cmd="fire">3</button>
+        <button class="num-btn" data-cmd="moon">4</button>
+        <button class="num-btn" data-cmd="sun">5</button>
+        <button class="action-btn" id="offBtn">OFF</button>
+        <button class="action-btn" id="fsBtn">FS</button>
+      </div>
     </div>
   </div>
 
@@ -177,6 +179,8 @@
     }
 
     async function play(name){
+      name = (name || '').toString().trim().toLowerCase();
+      if(!name) return;
       if(transitioning || current===name) return;
       const next=videos[name];
       if(!next) return;
@@ -215,11 +219,13 @@
     }
 
     document.querySelectorAll('.num-btn').forEach(b=>{
-      b.addEventListener('click',()=>play(b.dataset.cmd));
+      b.addEventListener('click',()=> {
+        play(b.dataset.cmd);
+      });
     });
     document.getElementById('offBtn').addEventListener('click',stopAll);
 
-    const fsTarget=document.querySelector('.video-frame');
+    const fsTarget=document.querySelector('.video-stage');
     function toggleFullscreen(){
       if(!document.fullscreenElement){
         fsTarget.requestFullscreen?.();
