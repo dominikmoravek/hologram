@@ -135,9 +135,9 @@
     let transitioning = false;
     const FADE_TIME = 250;
 
-    // sestaví název souboru podle čísla: např. 0 -> "0.png", -1 -> "-1.png"
+    // sestaví název souboru podle čísla: např. 0 -> "0.jpg", -1 -> "-1.jpg"
     function filenameForTemp(n){
-      return `${n}.png`;
+      return `${n}.jpg`;
     }
 
     // předběžné nastavení (schová oba)
@@ -243,7 +243,7 @@
     // Inicializace
     window.addEventListener('load', ()=>{
       hideAllImmediate();
-      // Na začátku zobrazíme 0.png (pokud existuje)
+      // Na začátku zobrazíme 0.jpg (pokud existuje)
       showTemp(0);
     });
   </script>
