@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Hologram — obrázky podle teplot (4:3 crop)</title>
   <style>
+    :root{
+      /* Upravit tyto hodnoty pro velikost / "oddálení" */
+      --stage-max-width-vw: 75vw;    /* šířka stage jako % viewportu (zmenší/rozšíří) */
+      --stage-height-vh: 70vh;      /* použito k výpočtu pro 4:3 (čím menší, tím dálší) */
+    }
+
     html,body{
       height:100%;
       margin:0;
@@ -25,13 +31,17 @@
 
     /* Stage with fixed 4:3 aspect ratio. */
     .video-stage {
-      width: min(90vw, calc(85vh * 4 / 3));
+      /* stage bude menší než dříve; pro větší "oddálení" sniž --stage-max-width-vw a --stage-height-vh */
+      width: min(var(--stage-max-width-vw), calc(var(--stage-height-vh) * 4 / 3));
       aspect-ratio: 4 / 3;
       height: auto;
       position: relative;
       display:block;
       overflow:hidden;
       background:#000;
+      /* Pokud bys chtěl simulovat dálku ještě víc, můžeš odkomentovat scale:
+         transform: scale(0.92);
+         (snižit hodnotu <1 = dál, >1 = blíž) */
     }
 
     /* Two stacked images for crossfade */
@@ -137,12 +147,10 @@
     let transitioning = false;
     const FADE_TIME = 250;
 
-    // sestaví název souboru podle čísla: např. 0 -> "0.jpg", -1 -> "-1.jpg"
     function filenameForTemp(n){
       return `${n}.jpg`;
     }
 
-    // předběžné nastavení (schová oba)
     function hideAllImmediate(){
       [imgA, imgB].forEach(i=>{
         i.classList.remove('show');
@@ -154,29 +162,23 @@
       currentTemp = null;
     }
 
-    // Crossfade na nový obrázek (číslo newTemp). Před přepnutím kontrolujeme existenci souboru.
     function showTemp(newTemp){
       if (transitioning) return;
       const src = filenameForTemp(newTemp);
 
-      // pokud je stejné číslo, nic nedělej
       if (currentTemp === newTemp && front && front.src && front.src.endsWith(src)) return;
 
       transitioning = true;
 
-      // test existence pomocí Image()
       const tester = new Image();
       tester.onload = () => {
         tester.onload = null;
         tester.onerror = null;
 
-        // připravíme back element
         if (!front) {
-          // první zobrazení: použijeme imgA jako front
           front = imgA;
           back = imgB;
         } else {
-          // pokud už máme front, back je druhý
           back = (front === imgA) ? imgB : imgA;
         }
 
@@ -184,18 +186,14 @@
         back.classList.remove('show');
         back.src = src;
 
-        // Po načtení (už víme, že existuje), proveď fade:
-        // force reflow
         void back.offsetWidth;
         back.classList.add('show');
 
         if (front && front.classList.contains('show')) {
-          // máme viditelný front — čekáme na přechod, pak swapneme
           front.classList.remove('show');
           const onTransitionEnd = () => {
             front.style.display = 'none';
             front.removeEventListener('transitionend', onTransitionEnd);
-            // swap references
             const tmp = front;
             front = back;
             back = tmp;
@@ -204,7 +202,6 @@
           };
           front.addEventListener('transitionend', onTransitionEnd, { once: true });
         } else {
-          // žádný front (první zobrazení) — okamžitě nastavíme front/back
           front = back;
           back = (front === imgA) ? imgB : imgA;
           currentTemp = newTemp;
@@ -217,16 +214,15 @@
         tester.onerror = null;
         transitioning = false;
       };
-      // spustíme test (propojí request)
       tester.src = src;
     }
 
     function stepUp(){
-      if (currentTemp === null) return; // nejdřív stiskni ON
+      if (currentTemp === null) return;
       showTemp(currentTemp + 1);
     }
     function stepDown(){
-      if (currentTemp === null) return; // nejdřív stiskni ON
+      if (currentTemp === null) return;
       showTemp(currentTemp - 1);
     }
 
@@ -235,18 +231,15 @@
         i.classList.remove('show');
         i.style.display = 'none';
       });
-      // necháme currentTemp nezměněné nebo nastavíme null? nastavíme null, aby bylo potřeba ON
       currentTemp = null;
       front = null;
       back = null;
     }
 
-    // ON: explicitně načte 0.jpg a nastaví jako startovní
     function turnOn(){
       showTemp(0);
     }
 
-    // Fullscreen toggle (label stays "FS")
     function toggleFullscreen(){
       if(!document.fullscreenElement){
         stage.requestFullscreen?.();
@@ -263,7 +256,6 @@
     fsBtn.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', ()=> { fsBtn.textContent = 'FS'; });
 
-    // Inicializace: nenačítat nic automaticky — čekáme na ON
     window.addEventListener('load', hideAllImmediate);
   </script>
 </body>
