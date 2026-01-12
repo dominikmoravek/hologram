@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hologram — minimal (4:3 crop, crossfade)</title>
+  <title>Hologram — ovládání podle teplot (4:3 crop)</title>
   <style>
     html,body{
       height:100%;
@@ -23,9 +23,7 @@
       background:#000;
     }
 
-    /* Stage with fixed 4:3 aspect ratio. It will be slightly smaller than full screen.
-       The stage width is the smaller of 90vw and the width that keeps 4:3 for 85vh height.
-       Videos inside use object-fit:cover so sides get cropped to fill 4:3. */
+    /* Stage with fixed 4:3 aspect ratio. */
     .video-stage {
       width: min(90vw, calc(85vh * 4 / 3));
       aspect-ratio: 4 / 3;
@@ -41,13 +39,14 @@
       inset:0;
       width:100%;
       height:100%;
-      object-fit:cover;         /* cover to crop sides and keep 4:3 */
+      object-fit:cover;         /* crop boky a držet 4:3 */
       opacity:0;
       transition: opacity 250ms ease;
       will-change: opacity;
       z-index:1;
       pointer-events:none;
       background:transparent;
+      display:block;
     }
     .video-stage video.show{
       opacity:1;
@@ -62,45 +61,28 @@
       bottom:10px;
       display:flex;
       flex-direction:column;
-      gap:48px;                 /* zvětšený odstup mezi tlačítky (48px) */
+      gap:48px;                 /* odstup mezi tlačítky (48px) */
       align-items:center;
       z-index:2147483647;
       pointer-events:auto;
     }
 
-    .num-btn{
-      width:40px;
-      height:40px;
+    .ctrl-btn{
+      width:44px;
+      height:44px;
       border-radius:6px;
       border:none;
       background:#000;
       color:#fff;
       font-weight:700;
-      font-size:16px;
+      font-size:18px;
       display:inline-flex;
       align-items:center;
       justify-content:center;
       cursor:pointer;
       opacity:0.95;
     }
-    .num-btn:active{transform:scale(0.98)}
-
-    .action-btn{
-      min-width:44px;
-      height:40px;
-      border-radius:6px;
-      border:none;
-      background:#000;
-      color:#fff;
-      font-weight:700;
-      font-size:13px;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      cursor:pointer;
-      opacity:0.95;
-    }
-    .action-btn:active{transform:scale(0.98)}
+    .ctrl-btn:active{transform:scale(0.98)}
 
     /* Keep buttons visible in fullscreen */
     :fullscreen .corner-btns,
@@ -119,41 +101,80 @@
 <body>
   <div class="video-frame" aria-live="polite">
     <div class="video-stage">
-      <video id="snow"  src="snow.mp4"  loop muted playsinline preload="auto"></video>
-      <video id="cloud" src="cloud.mp4" loop muted playsinline preload="auto"></video>
-      <video id="fire"  src="fire.mp4"  loop muted playsinline preload="auto"></video>
+      <!--
+        Předpoklad: video elementy jsou pojmenované tak, aby z nich šlo zjistit číslo teploty,
+        např. id="t_-5" nebo data-temp="-5" nebo src obsahuje -5 apod.
+        Pokud chcete spolehlivě řadit, přidejte k video tagům data-temp atribut:
+        <video data-temp="-5" src="..."></video>
+      -->
+      <video id="t_-5" data-temp="-5" src="t_-5.mp4" loop muted playsinline preload="auto"></video>
+      <video id="t_0"  data-temp="0"  src="t_0.mp4"  loop muted playsinline preload="auto"></video>
+      <video id="t_5"  data-temp="5"  src="t_5.mp4"  loop muted playsinline preload="auto"></video>
+      <!-- přidejte další <video> tagy odpovídajících názvů/atributů -->
 
       <div class="corner-btns">
-        <button class="num-btn" data-cmd="snow">1</button>
-        <button class="num-btn" data-cmd="cloud">2</button>
-        <button class="num-btn" data-cmd="fire">3</button>
-        <button class="action-btn" id="offBtn">OFF</button>
-        <button class="action-btn" id="fsBtn">FS</button>
+        <button class="ctrl-btn" id="btnPlus">+</button>
+        <button class="ctrl-btn" id="btnMinus">−</button>
+        <button class="ctrl-btn" id="offBtn">OFF</button>
+        <button class="ctrl-btn" id="fsBtn">FS</button>
       </div>
     </div>
   </div>
 
   <script>
-    const videos = {
-      snow:  document.getElementById('snow'),
-      cloud: document.getElementById('cloud'),
-      fire:  document.getElementById('fire')
-    };
+    // Najde videa, pokusí se z nich parsovat teplotu (data-temp, id, nebo src).
+    function parseTempFromVideo(v) {
+      if (v.dataset && v.dataset.temp !== undefined) {
+        const n = Number(v.dataset.temp);
+        return Number.isFinite(n) ? n : NaN;
+      }
+      const id = v.id || '';
+      const idMatch = id.match(/-?\d+/);
+      if (idMatch) return Number(idMatch[0]);
+      const src = (v.getAttribute('src') || '');
+      const srcMatch = src.match(/-?\d+/);
+      if (srcMatch) return Number(srcMatch[0]);
+      return NaN;
+    }
 
-    const fsBtn = document.getElementById('fsBtn');
-    fsBtn.textContent = 'FS'; // vždycky FS
+    // Všechny video elementy ve stage
+    const videoElems = Array.from(document.querySelectorAll('.video-stage video'));
 
-    let current = null;
+    // Sestavíme pole {el, temp} a seřadíme podle temp vzestupně
+    const videoItems = videoElems
+      .map(el => ({ el, temp: parseTempFromVideo(el) }))
+      .filter(item => !Number.isNaN(item.temp))
+      .sort((a,b) => a.temp - b.temp);
+
+    // Pokud jsou někde videa bez parsovatelné teploty, přidáme je na konec (bez pořadí)
+    const unparsed = videoElems
+      .filter(el => !videoItems.some(item => item.el === el))
+      .map(el => ({ el, temp: NaN }));
+    const sortedItems = videoItems.concat(unparsed);
+
+    // Pole jen videí (ve správném pořadí)
+    const sortedVideos = sortedItems.map(i => i.el);
+    const sortedTemps  = sortedItems.map(i => i.temp); // pro případné zobrazení
+
+    // UI prvky
+    const plusBtn  = document.getElementById('btnPlus');
+    const minusBtn = document.getElementById('btnMinus');
+    const offBtn   = document.getElementById('offBtn');
+    const fsBtn    = document.getElementById('fsBtn');
+    fsBtn.textContent = 'FS'; // vždy FS
+
+    let currentIndex = -1;     // index v sortedVideos, -1 = žádné
     let transitioning = false;
     const FADE_TIME = 250;
 
+    // Skryjeme všechna videa okamžitě při startu
     function hideAllImmediate(){
-      Object.values(videos).forEach(v=>{
-        try{v.pause()}catch{}
+      sortedVideos.forEach(v=>{
+        try{ v.pause(); }catch{}
         v.classList.remove('show');
-        v.style.display='none';
+        v.style.display = 'none';
       });
-      current=null;
+      currentIndex = -1;
     }
 
     function safePlayStart(v){
@@ -174,69 +195,75 @@
       });
     }
 
-    async function play(name){
-      name = (name || '').toString().trim().toLowerCase();
-      if(!name) return;
-      if(transitioning || current===name) return;
-      const next=videos[name];
-      if(!next) return;
-      transitioning=true;
+    async function playIndex(idx){
+      if (idx < 0 || idx >= sortedVideos.length) return;
+      if (transitioning || currentIndex === idx) return;
+      const next = sortedVideos[idx];
+      if (!next) return;
+      transitioning = true;
 
-      next.style.display='block';
+      next.style.display = 'block';
       await safePlayStart(next);
       void next.offsetWidth;
       next.classList.add('show');
 
-      if(current){
-        const prev=videos[current];
+      if (currentIndex !== -1){
+        const prev = sortedVideos[currentIndex];
         prev.classList.remove('show');
-        prev.addEventListener('transitionend',()=>{
-          try{prev.pause()}catch{}
-          prev.style.display='none';
-        },{once:true});
+        prev.addEventListener('transitionend', ()=>{
+          try{ prev.pause(); }catch{}
+          prev.style.display = 'none';
+        }, { once: true });
       }
 
       setTimeout(()=>{
-        current=name;
-        transitioning=false;
-      },FADE_TIME+50);
+        currentIndex = idx;
+        transitioning = false;
+      }, FADE_TIME + 50);
     }
 
     function stopAll(){
-      if(current){
-        const prev=videos[current];
+      if (currentIndex !== -1){
+        const prev = sortedVideos[currentIndex];
         prev.classList.remove('show');
-        prev.addEventListener('transitionend',()=>{
-          try{prev.pause()}catch{}
-          prev.style.display='none';
-        },{once:true});
+        prev.addEventListener('transitionend', ()=>{
+          try{ prev.pause(); }catch{}
+          prev.style.display = 'none';
+        }, { once: true });
       }
-      current=null;
+      currentIndex = -1;
     }
 
-    document.querySelectorAll('.num-btn').forEach(b=>{
-      b.addEventListener('click',()=> {
-        play(b.dataset.cmd);
-      });
-    });
-    document.getElementById('offBtn').addEventListener('click',stopAll);
+    function stepUp(){
+      if (sortedVideos.length === 0) return;
+      const nextIndex = currentIndex === -1 ? 0 : Math.min(sortedVideos.length - 1, currentIndex + 1);
+      playIndex(nextIndex);
+    }
+    function stepDown(){
+      if (sortedVideos.length === 0) return;
+      const nextIndex = currentIndex === -1 ? sortedVideos.length - 1 : Math.max(0, currentIndex - 1);
+      playIndex(nextIndex);
+    }
 
-    const fsTarget=document.querySelector('.video-stage');
+    plusBtn.addEventListener('click', stepUp);
+    minusBtn.addEventListener('click', stepDown);
+    offBtn.addEventListener('click', stopAll);
+
+    const fsTarget = document.querySelector('.video-stage');
     function toggleFullscreen(){
       if(!document.fullscreenElement){
         fsTarget.requestFullscreen?.();
       }else{
         document.exitFullscreen?.();
       }
-      // nebudeme měnit text; zaručíme, že zůstane "FS" i při změně fullscreenu
+      // nikdy neměnit štítek, vždy FS
       fsBtn.textContent = 'FS';
     }
-    fsBtn.addEventListener('click',toggleFullscreen);
-
-    // pokud uživatel opustí/fullscreenuje jinak (ESC atd.), udržujeme text "FS"
+    fsBtn.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', ()=> { fsBtn.textContent = 'FS'; });
 
-    window.addEventListener('load',hideAllImmediate);
+    // Inicializace: schovat vše
+    window.addEventListener('load', hideAllImmediate);
   </script>
 </body>
 </html>
