@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hologram — ovládání podle teplot (4:3 crop)</title>
+  <title>Hologram — obrázky podle teplot (4:3 crop)</title>
   <style>
     html,body{
       height:100%;
@@ -31,24 +31,25 @@
       position: relative;
       display:block;
       overflow:hidden;
+      background:#000;
     }
 
-    /* Videos stacked and centered; opacity used for crossfade (short fade) */
-    .video-stage video{
+    /* Two stacked images for crossfade */
+    .video-stage img{
       position:absolute;
       inset:0;
       width:100%;
       height:100%;
-      object-fit:cover;         /* crop boky a držet 4:3 */
+      object-fit:cover;
       opacity:0;
       transition: opacity 250ms ease;
       will-change: opacity;
       z-index:1;
       pointer-events:none;
-      background:transparent;
       display:block;
+      background:transparent;
     }
-    .video-stage video.show{
+    .video-stage img.show{
       opacity:1;
       z-index:2;
       pointer-events:auto;
@@ -100,17 +101,10 @@
 
 <body>
   <div class="video-frame" aria-live="polite">
-    <div class="video-stage">
-      <!--
-        Předpoklad: video elementy jsou pojmenované tak, aby z nich šlo zjistit číslo teploty,
-        např. id="t_-5" nebo data-temp="-5" nebo src obsahuje -5 apod.
-        Pokud chcete spolehlivě řadit, přidejte k video tagům data-temp atribut:
-        <video data-temp="-5" src="..."></video>
-      -->
-      <video id="t_-5" data-temp="-5" src="t_-5.mp4" loop muted playsinline preload="auto"></video>
-      <video id="t_0"  data-temp="0"  src="t_0.mp4"  loop muted playsinline preload="auto"></video>
-      <video id="t_5"  data-temp="5"  src="t_5.mp4"  loop muted playsinline preload="auto"></video>
-      <!-- přidejte další <video> tagy odpovídajících názvů/atributů -->
+    <div class="video-stage" id="stage">
+      <!-- dva <img> elementy pro crossfade -->
+      <img id="imgA" alt="" />
+      <img id="imgB" alt="" />
 
       <div class="corner-btns">
         <button class="ctrl-btn" id="btnPlus">+</button>
@@ -122,148 +116,136 @@
   </div>
 
   <script>
-    // Najde videa, pokusí se z nich parsovat teplotu (data-temp, id, nebo src).
-    function parseTempFromVideo(v) {
-      if (v.dataset && v.dataset.temp !== undefined) {
-        const n = Number(v.dataset.temp);
-        return Number.isFinite(n) ? n : NaN;
-      }
-      const id = v.id || '';
-      const idMatch = id.match(/-?\d+/);
-      if (idMatch) return Number(idMatch[0]);
-      const src = (v.getAttribute('src') || '');
-      const srcMatch = src.match(/-?\d+/);
-      if (srcMatch) return Number(srcMatch[0]);
-      return NaN;
-    }
-
-    // Všechny video elementy ve stage
-    const videoElems = Array.from(document.querySelectorAll('.video-stage video'));
-
-    // Sestavíme pole {el, temp} a seřadíme podle temp vzestupně
-    const videoItems = videoElems
-      .map(el => ({ el, temp: parseTempFromVideo(el) }))
-      .filter(item => !Number.isNaN(item.temp))
-      .sort((a,b) => a.temp - b.temp);
-
-    // Pokud jsou někde videa bez parsovatelné teploty, přidáme je na konec (bez pořadí)
-    const unparsed = videoElems
-      .filter(el => !videoItems.some(item => item.el === el))
-      .map(el => ({ el, temp: NaN }));
-    const sortedItems = videoItems.concat(unparsed);
-
-    // Pole jen videí (ve správném pořadí)
-    const sortedVideos = sortedItems.map(i => i.el);
-    const sortedTemps  = sortedItems.map(i => i.temp); // pro případné zobrazení
-
-    // UI prvky
-    const plusBtn  = document.getElementById('btnPlus');
+    const imgA = document.getElementById('imgA');
+    const imgB = document.getElementById('imgB');
+    const plusBtn = document.getElementById('btnPlus');
     const minusBtn = document.getElementById('btnMinus');
-    const offBtn   = document.getElementById('offBtn');
-    const fsBtn    = document.getElementById('fsBtn');
-    fsBtn.textContent = 'FS'; // vždy FS
+    const offBtn = document.getElementById('offBtn');
+    const fsBtn = document.getElementById('fsBtn');
+    const stage = document.getElementById('stage');
 
-    let currentIndex = -1;     // index v sortedVideos, -1 = žádné
+    fsBtn.textContent = 'FS';
+
+    // front = právě viditelný element, back = ten, který připravujeme
+    let front = imgA;
+    let back = imgB;
+
+    // aktuální "teplota" (číslo). výchozí 0
+    let currentTemp = 0;
     let transitioning = false;
     const FADE_TIME = 250;
 
-    // Skryjeme všechna videa okamžitě při startu
+    // sestaví název souboru podle čísla: např. 0 -> "0.png", -1 -> "-1.png"
+    function filenameForTemp(n){
+      return `${n}.png`;
+    }
+
+    // předběžné nastavení (schová oba)
     function hideAllImmediate(){
-      sortedVideos.forEach(v=>{
-        try{ v.pause(); }catch{}
-        v.classList.remove('show');
-        v.style.display = 'none';
-      });
-      currentIndex = -1;
-    }
-
-    function safePlayStart(v){
-      return new Promise(resolve=>{
-        if(v.readyState>=2){
-          try{v.currentTime=0}catch{}
-          v.play().then(resolve).catch(resolve);
-        }else{
-          const onMeta=()=>{
-            try{v.currentTime=0}catch{}
-            v.play().catch(()=>{});
-            v.removeEventListener('loadedmetadata',onMeta);
-            setTimeout(resolve,50);
-          };
-          v.addEventListener('loadedmetadata',onMeta);
-          setTimeout(resolve,800);
-        }
+      [imgA, imgB].forEach(i=>{
+        i.classList.remove('show');
+        i.style.display = 'none';
+        i.src = '';
       });
     }
 
-    async function playIndex(idx){
-      if (idx < 0 || idx >= sortedVideos.length) return;
-      if (transitioning || currentIndex === idx) return;
-      const next = sortedVideos[idx];
-      if (!next) return;
+    // crossfade na nový obrázek (číslo newTemp). pokud soubor neexistuje (onerror), nic nezměníme.
+    function showTemp(newTemp){
+      if (transitioning) return;
+      const src = filenameForTemp(newTemp);
+
+      // pokud je stejné číslo, nic nedělej
+      if (newTemp === currentTemp && front.src && front.src.endsWith(src)) return;
+
       transitioning = true;
 
-      next.style.display = 'block';
-      await safePlayStart(next);
-      void next.offsetWidth;
-      next.classList.add('show');
+      // připravíme back
+      back.style.display = 'block';
+      back.classList.remove('show');
+      back.src = src;
 
-      if (currentIndex !== -1){
-        const prev = sortedVideos[currentIndex];
-        prev.classList.remove('show');
-        prev.addEventListener('transitionend', ()=>{
-          try{ prev.pause(); }catch{}
-          prev.style.display = 'none';
-        }, { once: true });
-      }
-
-      setTimeout(()=>{
-        currentIndex = idx;
+      // pokud se nepodaří načíst, vrátíme transitioning=false a nezměníme nic
+      const onError = () => {
+        console.warn('Nepodařilo se načíst obrázek', src);
+        back.removeEventListener('load', onLoad);
+        back.removeEventListener('error', onError);
+        back.style.display = 'none';
+        back.src = '';
         transitioning = false;
-      }, FADE_TIME + 50);
-    }
+      };
+      const onLoad = () => {
+        back.removeEventListener('load', onLoad);
+        back.removeEventListener('error', onError);
 
-    function stopAll(){
-      if (currentIndex !== -1){
-        const prev = sortedVideos[currentIndex];
-        prev.classList.remove('show');
-        prev.addEventListener('transitionend', ()=>{
-          try{ prev.pause(); }catch{}
-          prev.style.display = 'none';
-        }, { once: true });
-      }
-      currentIndex = -1;
+        // spustíme fade: přidat class show na back, odebrat ze front
+        // front může být prázdný při prvním načtení
+        // force reflow
+        void back.offsetWidth;
+        back.classList.add('show');
+
+        if (front) {
+          front.classList.remove('show');
+          front.addEventListener('transitionend', function handler(){
+            front.style.display = 'none';
+            front.removeEventListener('transitionend', handler);
+            // swap references
+            const tmp = front;
+            front = back;
+            back = tmp;
+            currentTemp = newTemp;
+            transitioning = false;
+          }, { once: true });
+        } else {
+          // žádný front (první načtení)
+          front = back;
+          back = (front === imgA) ? imgB : imgA;
+          currentTemp = newTemp;
+          transitioning = false;
+        }
+      };
+
+      back.addEventListener('load', onLoad);
+      back.addEventListener('error', onError);
     }
 
     function stepUp(){
-      if (sortedVideos.length === 0) return;
-      const nextIndex = currentIndex === -1 ? 0 : Math.min(sortedVideos.length - 1, currentIndex + 1);
-      playIndex(nextIndex);
+      showTemp(currentTemp + 1);
     }
     function stepDown(){
-      if (sortedVideos.length === 0) return;
-      const nextIndex = currentIndex === -1 ? sortedVideos.length - 1 : Math.max(0, currentIndex - 1);
-      playIndex(nextIndex);
+      showTemp(currentTemp - 1);
+    }
+
+    function stopAll(){
+      // skryjeme
+      [imgA, imgB].forEach(i=>{
+        i.classList.remove('show');
+        i.style.display = 'none';
+      });
+      currentTemp = 0; // volitelně reset
+    }
+
+    // Fullscreen toggle (label stays "FS")
+    function toggleFullscreen(){
+      if(!document.fullscreenElement){
+        stage.requestFullscreen?.();
+      }else{
+        document.exitFullscreen?.();
+      }
+      fsBtn.textContent = 'FS';
     }
 
     plusBtn.addEventListener('click', stepUp);
     minusBtn.addEventListener('click', stepDown);
     offBtn.addEventListener('click', stopAll);
-
-    const fsTarget = document.querySelector('.video-stage');
-    function toggleFullscreen(){
-      if(!document.fullscreenElement){
-        fsTarget.requestFullscreen?.();
-      }else{
-        document.exitFullscreen?.();
-      }
-      // nikdy neměnit štítek, vždy FS
-      fsBtn.textContent = 'FS';
-    }
     fsBtn.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', ()=> { fsBtn.textContent = 'FS'; });
 
-    // Inicializace: schovat vše
-    window.addEventListener('load', hideAllImmediate);
+    // Inicializace
+    window.addEventListener('load', ()=>{
+      hideAllImmediate();
+      // Na začátku zobrazíme 0.png (pokud existuje)
+      showTemp(0);
+    });
   </script>
 </body>
 </html>
