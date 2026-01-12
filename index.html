@@ -109,6 +109,7 @@
       <div class="corner-btns">
         <button class="ctrl-btn" id="btnPlus">+</button>
         <button class="ctrl-btn" id="btnMinus">−</button>
+        <button class="ctrl-btn" id="btnOn">ON</button>
         <button class="ctrl-btn" id="offBtn">OFF</button>
         <button class="ctrl-btn" id="fsBtn">FS</button>
       </div>
@@ -120,18 +121,19 @@
     const imgB = document.getElementById('imgB');
     const plusBtn = document.getElementById('btnPlus');
     const minusBtn = document.getElementById('btnMinus');
+    const onBtn = document.getElementById('btnOn');
     const offBtn = document.getElementById('offBtn');
     const fsBtn = document.getElementById('fsBtn');
     const stage = document.getElementById('stage');
 
     fsBtn.textContent = 'FS';
 
-    // front = právě viditelný element, back = ten, který připravujeme
-    let front = imgA;
-    let back = imgB;
+    // front = právě viditelný element (má .show), back = ten, který připravujeme
+    let front = null;
+    let back = null;
 
-    // aktuální "teplota" (číslo). výchozí 0
-    let currentTemp = 0;
+    // aktuální "teplota" (číslo). null = nic nezobrazeno
+    let currentTemp = null;
     let transitioning = false;
     const FADE_TIME = 250;
 
@@ -147,81 +149,101 @@
         i.style.display = 'none';
         i.src = '';
       });
+      front = null;
+      back = null;
+      currentTemp = null;
     }
 
-    // crossfade na nový obrázek (číslo newTemp). pokud soubor neexistuje (onerror), nic nezměníme.
+    // Crossfade na nový obrázek (číslo newTemp). Před přepnutím kontrolujeme existenci souboru.
     function showTemp(newTemp){
       if (transitioning) return;
       const src = filenameForTemp(newTemp);
 
       // pokud je stejné číslo, nic nedělej
-      if (newTemp === currentTemp && front.src && front.src.endsWith(src)) return;
+      if (currentTemp === newTemp && front && front.src && front.src.endsWith(src)) return;
 
       transitioning = true;
 
-      // připravíme back
-      back.style.display = 'block';
-      back.classList.remove('show');
-      back.src = src;
+      // test existence pomocí Image()
+      const tester = new Image();
+      tester.onload = () => {
+        tester.onload = null;
+        tester.onerror = null;
 
-      // pokud se nepodaří načíst, vrátíme transitioning=false a nezměníme nic
-      const onError = () => {
-        console.warn('Nepodařilo se načíst obrázek', src);
-        back.removeEventListener('load', onLoad);
-        back.removeEventListener('error', onError);
-        back.style.display = 'none';
-        back.src = '';
-        transitioning = false;
-      };
-      const onLoad = () => {
-        back.removeEventListener('load', onLoad);
-        back.removeEventListener('error', onError);
+        // připravíme back element
+        if (!front) {
+          // první zobrazení: použijeme imgA jako front
+          front = imgA;
+          back = imgB;
+        } else {
+          // pokud už máme front, back je druhý
+          back = (front === imgA) ? imgB : imgA;
+        }
 
-        // spustíme fade: přidat class show na back, odebrat ze front
-        // front může být prázdný při prvním načtení
+        back.style.display = 'block';
+        back.classList.remove('show');
+        back.src = src;
+
+        // Po načtení (už víme, že existuje), proveď fade:
         // force reflow
         void back.offsetWidth;
         back.classList.add('show');
 
-        if (front) {
+        if (front && front.classList.contains('show')) {
+          // máme viditelný front — čekáme na přechod, pak swapneme
           front.classList.remove('show');
-          front.addEventListener('transitionend', function handler(){
+          const onTransitionEnd = () => {
             front.style.display = 'none';
-            front.removeEventListener('transitionend', handler);
+            front.removeEventListener('transitionend', onTransitionEnd);
             // swap references
             const tmp = front;
             front = back;
             back = tmp;
             currentTemp = newTemp;
             transitioning = false;
-          }, { once: true });
+          };
+          front.addEventListener('transitionend', onTransitionEnd, { once: true });
         } else {
-          // žádný front (první načtení)
+          // žádný front (první zobrazení) — okamžitě nastavíme front/back
           front = back;
           back = (front === imgA) ? imgB : imgA;
           currentTemp = newTemp;
           transitioning = false;
         }
       };
-
-      back.addEventListener('load', onLoad);
-      back.addEventListener('error', onError);
+      tester.onerror = () => {
+        console.warn('Nepodařilo se načíst obrázek', src);
+        tester.onload = null;
+        tester.onerror = null;
+        transitioning = false;
+      };
+      // spustíme test (propojí request)
+      tester.src = src;
     }
 
     function stepUp(){
+      if (currentTemp === null) return; // nejdřív stiskni ON
       showTemp(currentTemp + 1);
     }
     function stepDown(){
+      if (currentTemp === null) return; // nejdřív stiskni ON
       showTemp(currentTemp - 1);
     }
 
     function stopAll(){
-      // skryjeme
       [imgA, imgB].forEach(i=>{
         i.classList.remove('show');
         i.style.display = 'none';
       });
-      currentTemp = 0; // volitelně reset
+      // necháme currentTemp nezměněné nebo nastavíme null? nastavíme null, aby bylo potřeba ON
+      currentTemp = null;
+      front = null;
+      back = null;
+    }
+
+    // ON: explicitně načte 0.jpg a nastaví jako startovní
+    function turnOn(){
+      showTemp(0);
     }
 
     // Fullscreen toggle (label stays "FS")
@@ -236,16 +258,13 @@
 
     plusBtn.addEventListener('click', stepUp);
     minusBtn.addEventListener('click', stepDown);
+    onBtn.addEventListener('click', turnOn);
     offBtn.addEventListener('click', stopAll);
     fsBtn.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', ()=> { fsBtn.textContent = 'FS'; });
 
-    // Inicializace
-    window.addEventListener('load', ()=>{
-      hideAllImmediate();
-      // Na začátku zobrazíme 0.jpg (pokud existuje)
-      showTemp(0);
-    });
+    // Inicializace: nenačítat nic automaticky — čekáme na ON
+    window.addEventListener('load', hideAllImmediate);
   </script>
 </body>
 </html>
