@@ -22,21 +22,18 @@
       background:#000;
     }
 
-    /* Stage teď zabírá celé okno (bez 4:3 výřezu) — obrázky se škálují tak, aby byly celé vidět. */
+    /* Stage zabírá celé okno — obrázky jsou celé vidět */
     .video-stage {
       position: relative;
       width: 100%;
       height: 100%;
       display:block;
-      /* overflow visible, ale obrázky jsou omezeny max-width/max-height níže,
-         takže nebudou přesahovat viewport */
       overflow: visible;
       background:#000;
     }
 
     /* Obrázky jsou centrované a nikdy se neoříznou.
-       max-width/max-height zajišťují, že se vejdou do viewportu (berou v úvahu místo pro ovládací prvky).
-       Upravit hodnoty (např. -160px) pokud chceš větší mezery od okrajů. */
+       max-width/max-height zajišťují, že se vejdou do viewportu (bere v potaz místo pro ovládací prvky). */
     .video-stage img{
       position:absolute;
       left:50%;
@@ -134,7 +131,7 @@
 
     let front = null;
     let back = null;
-    let currentTemp = null;
+    let currentTemp = null; // null = nic nezobrazeno
     let transitioning = false;
     const FADE_TIME = 250;
 
@@ -173,12 +170,10 @@
           back = (front === imgA) ? imgB : imgA;
         }
 
-        // nastavit zdroj a zobrazit ho (max-width/max-height v CSS zajistí, že nebude oříznut)
         back.src = src;
         back.style.display = 'block';
         back.classList.remove('show');
 
-        // force reflow a fade
         void back.offsetWidth;
         back.classList.add('show');
 
@@ -229,8 +224,9 @@
       back = null;
     }
 
+    // ON nyní načítá 21.jpg jako první obrázek
     function turnOn(){
-      showTemp(0);
+      showTemp(21);
     }
 
     function toggleFullscreen(){
