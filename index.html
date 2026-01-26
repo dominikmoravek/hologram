@@ -115,11 +115,12 @@
       gap:6px;
       align-items:center;
       justify-content:center;
+      margin-top:4px;
     }
     .test-controls.show{ display:flex; }
 
     .test-controls .small-btn{
-      width:36px;
+      width:32px;
       height:28px;
       border-radius:6px;
       border:1px solid rgba(255,255,255,0.06);
@@ -131,7 +132,10 @@
       align-items:center;
       justify-content:center;
       cursor:pointer;
+      padding:0;
+      line-height:1;
     }
+    .test-controls .small-btn:active{ transform: scale(0.98); }
 
     :fullscreen .corner-btns,
     :-webkit-full-screen .corner-btns,
@@ -157,11 +161,16 @@
 
       <div class="corner-btns">
         <button class="ctrl-btn" id="btnUsb">USB</button>
-        <div class="test-controls" id="testControls">
-          <button class="small-btn" id="btnTestMinus">−</button>
+
+        <!-- T tlačítko a ovladač +/−, +/− se zobrazí až po kliknutí na T -->
+        <div style="display:flex; flex-direction:column; align-items:center;">
           <button class="ctrl-btn" id="btnTest" disabled title="Povoleno po připojení USB">T</button>
-          <button class="small-btn" id="btnTestPlus">+</button>
+          <div class="test-controls" id="testControls">
+            <button class="small-btn" id="btnTestMinus">−</button>
+            <button class="small-btn" id="btnTestPlus">+</button>
+          </div>
         </div>
+
         <button class="ctrl-btn" id="fsBtn">FS</button>
       </div>
     </div>
@@ -268,16 +277,13 @@
     // PREVIEW show (test mode) — nezmění provozní currentTemp ani buffery
     function showPreviewTemp(newTemp){
       const src = filenameForTemp(newTemp);
-      // rychlé vykreslení bez čekání na transitionend — previewImg zobrazuje nad hlavními obrázky
       previewImg.src = src;
       previewImg.style.display = 'block';
-      // force reflow then show
       void previewImg.offsetWidth;
       previewImg.classList.add('show');
     }
     function hidePreview(){
       previewImg.classList.remove('show');
-      // malý timeout aby opacity animation došla a pak schováme display
       setTimeout(()=>{ previewImg.style.display = 'none'; previewImg.src = ''; }, 120);
     }
 
@@ -298,7 +304,6 @@
     function enterTestMode(){
       testMode = true;
       preTestTemp = currentTemp;
-      // determine start index: if we had a currentTemp, align to it; otherwise start at TEST_MIN
       if (preTestTemp !== null && !Number.isNaN(preTestTemp)) {
         let idx = Math.round(preTestTemp) - TEST_MIN;
         idx = Math.max(0, Math.min(testTemps.length - 1, idx));
@@ -313,19 +318,14 @@
     }
     function exitTestMode(){
       testMode = false;
-      // hide preview and test controls, restore original provozni obrazek if exist
       hidePreview();
       testControls.classList.remove('show');
       testBtn.classList.remove('test-active');
       if (preTestTemp !== null) {
-        // re-show the preTestTemp (restore provozni obrazek)
         showTemp(preTestTemp);
-      } else {
-        // no previous provozni image — do nothing (operational will update on next serial)
       }
     }
 
-    // Test control steps
     function testStepUp(){
       if (!testMode) return;
       if (testIndex < testTemps.length - 1) testIndex++;
@@ -337,15 +337,16 @@
       showPreviewTemp(testTemps[testIndex]);
     }
 
-    // Handle incoming lines from serial
+    // Handle incoming lines from serial (provozni režim only while not in testMode)
     function handleSerialLine(line){
       const raw = line.trim();
       if (raw.length === 0) return;
 
-      // If in test mode, ignore serial input for provozni processing (user controls preview)
-      if (testMode) return;
+      if (testMode) {
+        // while in test mode ignore serial input for provozni processing
+        return;
+      }
 
-      // provozni processing: parse number, filter, MA
       const m = raw.match(/-?\d+(\.\d+)?/);
       if (!m) return;
       const value = Number(m[0]);
@@ -354,7 +355,6 @@
 
       const curAvg = bufferAverage(operationalBuffer);
       if (curAvg !== null && Math.abs(value - curAvg) > OUTLIER_THRESHOLD) {
-        // ignore outlier
         return;
       }
 
@@ -437,12 +437,15 @@
     testPlus.addEventListener('click', testStepUp);
     testMinus.addEventListener('click', testStepDown);
 
-    // Keyboard shortcut: T toggles test mode (if connected)
+    // Keyboard: T toggles test mode (if connected)
     window.addEventListener('keydown', (e) => {
       if (e.key === 't' || e.key === 'T') {
         if (!serialPort) return;
         if (!testMode) enterTestMode(); else exitTestMode();
       }
+      // optionally allow keyboard +/- when test mode active
+      if (testMode && (e.key === '+' || e.key === '=')) testStepUp();
+      if (testMode && (e.key === '-' || e.key === '_')) testStepDown();
     });
 
     // close serial on unload
@@ -452,7 +455,6 @@
 
     // init
     window.addEventListener('load', () => {
-      // start empty; operational images will appear on serial data
       imgA.classList.remove('show'); imgB.classList.remove('show');
       previewImg.classList.remove('show'); previewImg.style.display='none';
       testControls.classList.remove('show');
