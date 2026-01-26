@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hologram — USB input (jen USB a FS)</title>
+  <title>Hologram — USB input (jen USB a FS, s filtrem)</title>
   <style>
     html,body{
       height:100%;
@@ -32,15 +32,13 @@
       background:#000;
     }
 
-    /* Obrázky jsou centrované a nikdy se neoříznou.
-       max-width/max-height zajišťují, že se vejdou do viewportu (bere v potaz místo pro ovládací prvky). */
+    /* Obrázky jsou centrované a nikdy se neoříznou. */
     .video-stage img{
       position:absolute;
       left:50%;
       top:50%;
       transform:translate(-50%, -50%);
-      /* méně rezervy, máme jen 2 tlačítka */
-      max-width: calc(100vw - 120px);
+      max-width: calc(100vw - 120px);  /* rezervace pro tlačítka */
       max-height: calc(100vh - 40px);
       width:auto;
       height:auto;
@@ -58,7 +56,7 @@
       pointer-events:auto;
     }
 
-    /* Buttons in bottom-left corner — column */
+    /* Buttons in bottom-left corner — column (jen USB a FS) */
     .corner-btns{
       position:absolute;
       left:10px;
@@ -76,7 +74,7 @@
       height:44px;
       border-radius:8px;
       border:none;
-      background:#111;
+      background:#000; /* zůstane černé kolem */
       color:#fff;
       font-weight:700;
       font-size:16px;
@@ -88,11 +86,6 @@
     }
     .ctrl-btn:active{transform:scale(0.98)}
 
-    .ctrl-btn.connected{
-      background:#0a7; /* vizuální indikace že je připojeno */
-      color:#002;
-    }
-
     /* Keep buttons visible in fullscreen */
     :fullscreen .corner-btns,
     :-webkit-full-screen .corner-btns,
@@ -103,7 +96,21 @@
       z-index: 2147483647;
     }
 
-    header,footer,.note,.controls,.raw,.manual,.status{display:none}
+    /* Malý stavový text nahoře vlevo (nepovinné, pro ladění) */
+    .status {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      color: #ddd;
+      font-size: 14px;
+      z-index: 2147483647;
+      background: rgba(0,0,0,0.6);
+      padding: 6px 8px;
+      border-radius: 6px;
+      pointer-events: none;
+    }
+
+    header,footer,.note,.controls,.raw,.manual{display:none}
   </style>
 </head>
 
@@ -117,6 +124,8 @@
         <button class="ctrl-btn" id="btnUsb">USB</button>
         <button class="ctrl-btn" id="fsBtn">FS</button>
       </div>
+
+      <div class="status" id="status" aria-hidden="true">USB: off — avg: n/a</div>
     </div>
   </div>
 
@@ -127,23 +136,37 @@
     const usbBtn = document.getElementById('btnUsb');
     const fsBtn = document.getElementById('fsBtn');
     const stage = document.getElementById('stage');
+    const statusEl = document.getElementById('status');
 
     fsBtn.textContent = 'FS';
     usbBtn.textContent = 'USB';
 
-    // STAV
+    // STAV PRO OBRÁZKY
     let front = null;
     let back = null;
     let currentTemp = null; // null = nic nezobrazeno
     let transitioning = false;
-    const FADE_TIME = 250;
 
-    // SERIAL (Web Serial API)
-    let serialPort = null;
-    let serialReader = null;
-    let serialKeepReading = false;
+    // FILTR + BUFFER
+    const MA_WINDOW = 7; // klouzavý průměr: držíme posledních 5–10 hodnot (zde 7)
+    const OUTLIER_THRESHOLD = 15; // pokud nová hodnota liší od průměru více než toto, považujeme za extrém a ignorujeme
+    const MIN_TEMP = -50; // tvrdé dolní omezení (pokud chcete upravte)
+    const MAX_TEMP = 150; // tvrdé horní omezení (pokud chcete upravte)
+    const tempsBuffer = []; // buffer posledních hodnot (čísla - mohou být float)
+    function bufferPush(val){
+      tempsBuffer.push(val);
+      while (tempsBuffer.length > MA_WINDOW) tempsBuffer.shift();
+    }
+    function bufferClear(){
+      tempsBuffer.length = 0;
+    }
+    function bufferAverage(){
+      if (tempsBuffer.length === 0) return null;
+      const sum = tempsBuffer.reduce((s,x)=>s+x,0);
+      return sum / tempsBuffer.length;
+    }
 
-    // pomocná funkce: sestaví jméno souboru
+    // POMOCNÉ: sestaví jméno souboru podle čísla: např. 21 -> "21.jpg", -1 -> "-1.jpg"
     function filenameForTemp(n){
       return `${n}.jpg`;
     }
@@ -158,6 +181,8 @@
       front = null;
       back = null;
       currentTemp = null;
+      bufferClear();
+      updateStatus();
     }
 
     // crossfade a nastavení obrázku
@@ -169,7 +194,7 @@
 
       transitioning = true;
 
-      // test existence obrázku
+      // test existence obrázku (pokud chybí, nebudeme měnit)
       const tester = new Image();
       tester.onload = () => {
         tester.onload = null;
@@ -200,6 +225,7 @@
             back = tmp;
             currentTemp = newTemp;
             transitioning = false;
+            updateStatus();
           };
           front.addEventListener('transitionend', onTransitionEnd, { once: true });
         } else {
@@ -207,6 +233,7 @@
           back = (front === imgA) ? imgB : imgA;
           currentTemp = newTemp;
           transitioning = false;
+          updateStatus();
         }
       };
       tester.onerror = () => {
@@ -217,6 +244,14 @@
         transitioning = false;
       };
       tester.src = src;
+    }
+
+    // UI status
+    function updateStatus(extra){
+      const avg = bufferAverage();
+      const avgText = avg === null ? 'n/a' : avg.toFixed(2);
+      const curText = currentTemp === null ? 'n/a' : String(currentTemp);
+      statusEl.textContent = `USB: ${serialPort ? 'on' : 'off'} — avg: ${avgText} — shown: ${curText}` + (extra ? ' — ' + extra : '');
     }
 
     // FULLSCREEN toggle (text zůstává FS)
@@ -231,7 +266,12 @@
     fsBtn.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', ()=> { fsBtn.textContent = 'FS'; });
 
-    // --- Web Serial (USB) integration ---
+    // SERIAL (Web Serial API)
+    let serialPort = null;
+    let serialReader = null;
+    let serialKeepReading = false;
+
+    // připojení a čtení — bufferujeme řádky, skládáme hodnoty do klouzavého průměru
     async function connectSerial() {
       if (!('serial' in navigator)) {
         alert('Web Serial API není v tomto prohlížeči dostupný. Použij Chrome/Edge (HTTPS).');
@@ -239,31 +279,30 @@
       }
 
       try {
-        // otevře dialog pro výběr zařízení
+        // dialog pro výběr zařízení
         serialPort = await navigator.serial.requestPort();
         await serialPort.open({ baudRate: 115200 });
 
-        // připojíme dekodér pro čtení textu a čteme stream po řádcích
+        // nastavení čtení textu
         const textDecoder = new TextDecoderStream();
         serialPort.readable.pipeTo(textDecoder.writable);
         const reader = textDecoder.readable.getReader();
         serialReader = reader;
         serialKeepReading = true;
 
-        // indikace UI
         usbBtn.textContent = 'USB:ON';
-        usbBtn.classList.add('connected');
+        updateStatus();
 
-        // buffer pro slučování příchozích útržků — zaručíme, že zpracujeme celé řádky
+        // buffer pro slučování příchozích útržků — čteme celé řádky
         let buffer = '';
         while (serialKeepReading) {
           const { value, done } = await reader.read();
           if (done) break;
           if (value) {
             buffer += value;
-            // rozdělíme podle CR/LF; poslední část necháme v bufferu (je částečná)
+            // rozdělíme podle CR/LF; poslední část (možná neúplná) necháme v bufferu
             const parts = buffer.split(/\r?\n/);
-            buffer = parts.pop(); // poslední (možná neúplný) zůstane v bufferu
+            buffer = parts.pop();
             for (const part of parts) {
               const line = part.trim();
               if (line.length) handleSerialLine(line);
@@ -278,22 +317,49 @@
     }
 
     function handleSerialLine(line) {
-      // Dostaneme celou řádku (bufferování výše zabraňuje splitům jako "2" a "5")
-      // Hledáme první platné celé číslo v řádce (může obsahovat text kolem)
+      // Dostaneme celou řádku (bufferování výše zabrání rozdělení např. "2" a "5").
+      // Najdeme první číslo (může být "temp:20" nebo "20").
       const m = line.match(/-?\d+(\.\d+)?/);
-      if (m) {
-        const value = Math.round(Number(m[0]));
-        // ihned zobrazíme obrázek pro přijaté číslo
-        showTemp(value);
-      } else {
+      if (!m) {
         console.log('Serial řádka bez čísla:', line);
+        updateStatus('no-num');
+        return;
+      }
+
+      const value = Number(m[0]);
+      if (!Number.isFinite(value)) return;
+
+      // tvrdé ohraničení
+      if (value < MIN_TEMP || value > MAX_TEMP) {
+        console.warn('Extrémní hodnota ignorována:', value);
+        updateStatus('ignored-extreme');
+        return;
+      }
+
+      // pokud buffer obsahuje už nějaké hodnoty, porovnáme s průměrem a odmítneme extrémy
+      const curAvg = bufferAverage();
+      if (curAvg !== null && Math.abs(value - curAvg) > OUTLIER_THRESHOLD) {
+        console.warn('Hodnota považována za extrém a ignorována:', value, 'avg:', curAvg);
+        updateStatus('ignored-outlier');
+        return;
+      }
+
+      // přijmeme hodnotu do bufferu a spočítáme průměr
+      bufferPush(value);
+      const avg = bufferAverage();
+      updateStatus();
+
+      // na základě průměru aktualizujeme zobrazený obrázek (zaokrouhlíme)
+      if (avg !== null) {
+        const rounded = Math.round(avg);
+        showTemp(rounded);
       }
     }
 
     async function disconnectSerial() {
       serialKeepReading = false;
       usbBtn.textContent = 'USB';
-      usbBtn.classList.remove('connected');
+      updateStatus();
 
       try {
         if (serialReader) {
@@ -324,7 +390,7 @@
       await disconnectSerial();
     });
 
-    // inicializace: nic automaticky nezobrazíme — obrázek se zapne automaticky po přijetí hodnoty z USB
+    // inicializace
     window.addEventListener('load', hideAllImmediate);
   </script>
 </body>
