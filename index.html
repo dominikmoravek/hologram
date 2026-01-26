@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hologram — USB input (provozní + jednoduchý testovací mód)</title>
+  <title>Hologram — USB input (provozní + jednoduchý testovací ovladač)</title>
   <style>
     html,body{
       height:100%;
@@ -32,7 +32,7 @@
       background:#000;
     }
 
-    /* Obrázky jsou centrované a nikdy se neoříznou. */
+    /* Hlavní obrázky (provozní režim) */
     .video-stage img{
       position:absolute;
       left:50%;
@@ -56,14 +56,34 @@
       pointer-events:auto;
     }
 
-    /* Buttons in bottom-left corner — USB, T (test) a FS, blízko sebe a menší */
+    /* Preview image pro testovací mód (nezmění provozní buffer) */
+    #previewImg{
+      position:absolute;
+      left:50%;
+      top:50%;
+      transform:translate(-50%, -50%);
+      max-width: calc(100vw - 80px);
+      max-height: calc(100vh - 40px);
+      width:auto;
+      height:auto;
+      opacity:0;
+      transition: opacity 100ms linear;
+      will-change: opacity;
+      z-index:9999; /* nad vším */
+      pointer-events:none;
+      display:none;
+      background:transparent;
+    }
+    #previewImg.show{ display:block; opacity:1; }
+
+    /* Buttons in bottom-left corner — USB, T (test) a FS */
     .corner-btns{
       position:absolute;
       left:8px;
       bottom:8px;
       display:flex;
       flex-direction:column;
-      gap:8px; /* blízko u sebe */
+      gap:8px;
       align-items:center;
       z-index:2147483647;
       pointer-events:auto;
@@ -85,12 +105,32 @@
       opacity:0.98;
     }
     .ctrl-btn:active{transform:scale(0.98)}
-    .ctrl-btn[disabled]{
-      opacity:0.35;
-      cursor:default;
+    .ctrl-btn[disabled]{ opacity:0.35; cursor:default; }
+    .ctrl-btn.test-active{ outline:2px solid rgba(255,255,255,0.06); }
+
+    /* test controls (+/-) — skryté dokud není test mód aktivní */
+    .test-controls{
+      display:none;
+      flex-direction:row;
+      gap:6px;
+      align-items:center;
+      justify-content:center;
     }
-    .ctrl-btn.test-active{
-      outline: 2px solid rgba(255,255,255,0.08); /* jemná indikace, nebarví okolí */
+    .test-controls.show{ display:flex; }
+
+    .test-controls .small-btn{
+      width:36px;
+      height:28px;
+      border-radius:6px;
+      border:1px solid rgba(255,255,255,0.06);
+      background:#000;
+      color:#fff;
+      font-weight:700;
+      font-size:16px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
     }
 
     :fullscreen .corner-btns,
@@ -109,12 +149,19 @@
 <body>
   <div class="video-frame" aria-live="polite">
     <div class="video-stage" id="stage">
+      <!-- provozní obrázky (crossfade) -->
       <img id="imgA" alt="" />
       <img id="imgB" alt="" />
+      <!-- preview obrázek pro test mód (neovlivňuje provozní buffer) -->
+      <img id="previewImg" alt="preview" />
 
       <div class="corner-btns">
         <button class="ctrl-btn" id="btnUsb">USB</button>
-        <button class="ctrl-btn" id="btnTest" disabled title="Povoleno po připojení USB">T</button>
+        <div class="test-controls" id="testControls">
+          <button class="small-btn" id="btnTestMinus">−</button>
+          <button class="ctrl-btn" id="btnTest" disabled title="Povoleno po připojení USB">T</button>
+          <button class="small-btn" id="btnTestPlus">+</button>
+        </div>
         <button class="ctrl-btn" id="fsBtn">FS</button>
       </div>
     </div>
@@ -124,8 +171,12 @@
     // ELEMENTY
     const imgA = document.getElementById('imgA');
     const imgB = document.getElementById('imgB');
+    const previewImg = document.getElementById('previewImg');
     const usbBtn = document.getElementById('btnUsb');
     const testBtn = document.getElementById('btnTest');
+    const testControls = document.getElementById('testControls');
+    const testPlus = document.getElementById('btnTestPlus');
+    const testMinus = document.getElementById('btnTestMinus');
     const fsBtn = document.getElementById('fsBtn');
     const stage = document.getElementById('stage');
 
@@ -133,30 +184,29 @@
     usbBtn.textContent = 'USB';
     testBtn.textContent = 'T';
 
-    // OBRÁZKY / STAV
+    // PROVOZNÍ OBRÁZKY / STAV
     let front = null;
     let back = null;
     let currentTemp = null;   // aktuální zobrazená teplota v provozním módu
     let transitioning = false;
 
-    // PARAMETRY FILTRU (pro provozní mód)
+    // FILTR (provozní mód)
     const MA_WINDOW = 7;
     const OUTLIER_THRESHOLD = 15;
     const MIN_TEMP = -50;
     const MAX_TEMP = 150;
-
-    // PROVOZNÍ BUFFER
     const operationalBuffer = [];
 
-    // TEST MÓD: sekvenční rozsah -5 .. 30
+    // TEST MÓD: postupné indexování od -5 do 30
     const TEST_MIN = -5;
     const TEST_MAX = 30;
     const testTemps = [];
     for (let t = TEST_MIN; t <= TEST_MAX; t++) testTemps.push(t);
     let testMode = false;
-    let testIndex = 0; // index v testTemps
+    let testIndex = 0;
+    let preTestTemp = null; // uložíme hodnotu provozního zobrazení před vstupem do test módu
 
-    // HELPERS pro operational buffer
+    // HELPERS
     function bufferPush(buf, val){
       buf.push(val);
       while (buf.length > MA_WINDOW) buf.shift();
@@ -166,31 +216,11 @@
     }
     function bufferAverage(buf){
       if (buf.length === 0) return null;
-      const sum = buf.reduce((s,x)=>s+x,0);
-      return sum / buf.length;
+      return buf.reduce((s,x)=>s+x,0) / buf.length;
     }
+    function filenameForTemp(n){ return `${n}.jpg`; }
 
-    function filenameForTemp(n){
-      return `${n}.jpg`;
-    }
-
-    function hideAllImmediate(){
-      [imgA, imgB].forEach(i=>{
-        i.classList.remove('show');
-        i.style.display = 'none';
-        i.src = '';
-      });
-      front = null;
-      back = null;
-      currentTemp = null;
-      bufferClear(operationalBuffer);
-      testIndex = 0;
-      testMode = false;
-      testBtn.classList.remove('test-active');
-      testBtn.disabled = true;
-    }
-
-    // crossfade a nastavení obrázku
+    // PROVOZNÍ showTemp (ovlivní currentTemp + hlavní obrázky)
     function showTemp(newTemp){
       if (transitioning) return;
       const src = filenameForTemp(newTemp);
@@ -202,12 +232,8 @@
         tester.onload = null;
         tester.onerror = null;
 
-        if (!front) {
-          front = imgA;
-          back = imgB;
-        } else {
-          back = (front === imgA) ? imgB : imgA;
-        }
+        if (!front) { front = imgA; back = imgB; }
+        else back = (front === imgA) ? imgB : imgA;
 
         back.src = src;
         back.style.display = 'block';
@@ -227,7 +253,7 @@
             currentTemp = newTemp;
             transitioning = false;
           };
-          front.addEventListener('transitionend', onTransitionEnd, { once: true });
+          front.addEventListener('transitionend', onTransitionEnd, { once:true });
         } else {
           front = back;
           back = (front === imgA) ? imgB : imgA;
@@ -235,22 +261,29 @@
           transitioning = false;
         }
       };
-      tester.onerror = () => {
-        tester.onload = null;
-        tester.onerror = null;
-        transitioning = false;
-        // obrázek chybí -> ignorovat
-      };
+      tester.onerror = () => { tester.onload = null; tester.onerror = null; transitioning = false; /* ignore missing */ };
       tester.src = src;
+    }
+
+    // PREVIEW show (test mode) — nezmění provozní currentTemp ani buffery
+    function showPreviewTemp(newTemp){
+      const src = filenameForTemp(newTemp);
+      // rychlé vykreslení bez čekání na transitionend — previewImg zobrazuje nad hlavními obrázky
+      previewImg.src = src;
+      previewImg.style.display = 'block';
+      // force reflow then show
+      void previewImg.offsetWidth;
+      previewImg.classList.add('show');
+    }
+    function hidePreview(){
+      previewImg.classList.remove('show');
+      // malý timeout aby opacity animation došla a pak schováme display
+      setTimeout(()=>{ previewImg.style.display = 'none'; previewImg.src = ''; }, 120);
     }
 
     // FULLSCREEN
     function toggleFullscreen(){
-      if(!document.fullscreenElement){
-        stage.requestFullscreen?.();
-      }else{
-        document.exitFullscreen?.();
-      }
+      if(!document.fullscreenElement) stage.requestFullscreen?.(); else document.exitFullscreen?.();
       fsBtn.textContent = 'FS';
     }
     fsBtn.addEventListener('click', toggleFullscreen);
@@ -261,55 +294,58 @@
     let serialReader = null;
     let serialKeepReading = false;
 
-    // Když přepínáme do test módu, nastavíme testIndex tak, aby začal na poslední provozní hodnotě
-    function enterTestMode() {
+    // Enter/Exit test mode (T button)
+    function enterTestMode(){
       testMode = true;
-      // najdeme index odpovídající poslední provozní hodnotě currentTemp
-      if (currentTemp !== null) {
-        let idx = currentTemp - TEST_MIN; // direct mapping
-        if (isNaN(idx) || !isFinite(idx)) idx = 0;
-        idx = Math.round(idx);
+      preTestTemp = currentTemp;
+      // determine start index: if we had a currentTemp, align to it; otherwise start at TEST_MIN
+      if (preTestTemp !== null && !Number.isNaN(preTestTemp)) {
+        let idx = Math.round(preTestTemp) - TEST_MIN;
         idx = Math.max(0, Math.min(testTemps.length - 1, idx));
         testIndex = idx;
       } else {
-        // pokud nic nebylo zobrazeno před test módem, začneme na začátku (-5)
         testIndex = 0;
       }
-      // zobrazíme aktuální test image (poslední provozní nebo výchozí)
-      showTemp(testTemps[testIndex]);
+      // show preview starting at the last shown provozni obrazek
+      showPreviewTemp(testTemps[testIndex]);
+      testControls.classList.add('show');
       testBtn.classList.add('test-active');
     }
-
-    function exitTestMode() {
+    function exitTestMode(){
       testMode = false;
+      // hide preview and test controls, restore original provozni obrazek if exist
+      hidePreview();
+      testControls.classList.remove('show');
       testBtn.classList.remove('test-active');
-      // po návratu do provozního režimu zůstane provozní buffer nedotčený a zobrazená hodnota (currentTemp) zůstane
-      // (pokud chceš, můžeme obnovit z operationalBuffer, ale necháme to tak)
+      if (preTestTemp !== null) {
+        // re-show the preTestTemp (restore provozni obrazek)
+        showTemp(preTestTemp);
+      } else {
+        // no previous provozni image — do nothing (operational will update on next serial)
+      }
     }
 
-    // Zpracování příchozí řádky
-    function handleSerialLine(line) {
+    // Test control steps
+    function testStepUp(){
+      if (!testMode) return;
+      if (testIndex < testTemps.length - 1) testIndex++;
+      showPreviewTemp(testTemps[testIndex]);
+    }
+    function testStepDown(){
+      if (!testMode) return;
+      if (testIndex > 0) testIndex--;
+      showPreviewTemp(testTemps[testIndex]);
+    }
+
+    // Handle incoming lines from serial
+    function handleSerialLine(line){
       const raw = line.trim();
       if (raw.length === 0) return;
 
-      if (testMode) {
-        // TEST MODE: pouze postupné přepínání přes A/B
-        // A => posun vpřed (vyšší index), B => posun zpět (nižší index)
-        if (/^[Aa]$/.test(raw)) {
-          if (testIndex < testTemps.length - 1) testIndex++;
-          showTemp(testTemps[testIndex]);
-          return;
-        }
-        if (/^[Bb]$/.test(raw)) {
-          if (testIndex > 0) testIndex--;
-          showTemp(testTemps[testIndex]);
-          return;
-        }
-        // ignorujeme jiné vstupy v test módu (žádné MA ani filtry)
-        return;
-      }
+      // If in test mode, ignore serial input for provozni processing (user controls preview)
+      if (testMode) return;
 
-      // PROVOZNÍ MÓD: původní logika s MA a filtrem extrémů
+      // provozni processing: parse number, filter, MA
       const m = raw.match(/-?\d+(\.\d+)?/);
       if (!m) return;
       const value = Number(m[0]);
@@ -318,7 +354,7 @@
 
       const curAvg = bufferAverage(operationalBuffer);
       if (curAvg !== null && Math.abs(value - curAvg) > OUTLIER_THRESHOLD) {
-        // ignoruj extrém
+        // ignore outlier
         return;
       }
 
@@ -330,8 +366,8 @@
       }
     }
 
-    // připojení sériového portu a čtení řádků
-    async function connectSerial() {
+    // connectSerial / disconnectSerial (Web Serial)
+    async function connectSerial(){
       if (!('serial' in navigator)) {
         alert('Web Serial API není v tomto prohlížeči dostupný. Použij Chrome/Edge (HTTPS).');
         return;
@@ -347,7 +383,7 @@
         serialReader = reader;
         serialKeepReading = true;
 
-        // povolit tlačítko Test (zařízení připojeno)
+        // povolit tlačítko Test když je zařízení připojeno
         testBtn.disabled = false;
 
         let buffer = '';
@@ -359,8 +395,7 @@
             const parts = buffer.split(/\r?\n/);
             buffer = parts.pop();
             for (const part of parts) {
-              const line = part;
-              if (line != null) handleSerialLine(line);
+              if (part != null) handleSerialLine(part);
             }
           }
         }
@@ -370,10 +405,10 @@
       }
     }
 
-    async function disconnectSerial() {
+    async function disconnectSerial(){
       serialKeepReading = false;
       testBtn.disabled = true;
-      exitTestMode();
+      if (testMode) exitTestMode();
       try {
         if (serialReader) {
           try { await serialReader.cancel(); } catch {}
@@ -389,38 +424,40 @@
       }
     }
 
-    // USB tlačítko: toggle připojení
+    // Button wiring
     usbBtn.addEventListener('click', async () => {
-      if (serialPort) {
-        await disconnectSerial();
-      } else {
-        await connectSerial();
-      }
+      if (serialPort) await disconnectSerial(); else await connectSerial();
     });
 
-    // Test tlačítko: toggle test módu, aktivní pouze po připojení USB
     testBtn.addEventListener('click', () => {
-      if (!serialPort) return;
-      if (!testMode) enterTestMode();
-      else exitTestMode();
+      if (!serialPort) return; // povoleno až po připojení
+      if (!testMode) enterTestMode(); else exitTestMode();
     });
 
-    // Klávesové zkratky: 't' toggle test módu (nepovinné)
+    testPlus.addEventListener('click', testStepUp);
+    testMinus.addEventListener('click', testStepDown);
+
+    // Keyboard shortcut: T toggles test mode (if connected)
     window.addEventListener('keydown', (e) => {
       if (e.key === 't' || e.key === 'T') {
         if (!serialPort) return;
-        if (!testMode) enterTestMode();
-        else exitTestMode();
+        if (!testMode) enterTestMode(); else exitTestMode();
       }
     });
 
-    // zavření portu při opuštění stránky
+    // close serial on unload
     window.addEventListener('beforeunload', async () => {
       await disconnectSerial();
     });
 
-    // start: nic nezobrazíme — obrázky se řídí daty z USB
-    window.addEventListener('load', hideAllImmediate);
+    // init
+    window.addEventListener('load', () => {
+      // start empty; operational images will appear on serial data
+      imgA.classList.remove('show'); imgB.classList.remove('show');
+      previewImg.classList.remove('show'); previewImg.style.display='none';
+      testControls.classList.remove('show');
+      testBtn.disabled = true;
+    });
   </script>
 </body>
 </html>
