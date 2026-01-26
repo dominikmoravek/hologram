@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hologram — obrázky podle teplot (nezkracovat)</title>
+  <title>Hologram — obrázky podle teplot (USB input)</title>
   <style>
     html,body{
       height:100%;
@@ -112,19 +112,22 @@
         <button class="ctrl-btn" id="btnMinus">−</button>
         <button class="ctrl-btn" id="btnPlus">+</button>
         <button class="ctrl-btn" id="btnOn">ON</button>
-        <button class="ctrl-btn" id="offBtn">OFF</button>
+        <button class="ctrl-btn" id="btnOff">OFF</button>
+        <button class="ctrl-btn" id="btnUsb">USB</button>
         <button class="ctrl-btn" id="fsBtn">FS</button>
       </div>
     </div>
   </div>
 
   <script>
+    // --- image crossfade core (bez změn) ---
     const imgA = document.getElementById('imgA');
     const imgB = document.getElementById('imgB');
     const plusBtn = document.getElementById('btnPlus');
     const minusBtn = document.getElementById('btnMinus');
     const onBtn = document.getElementById('btnOn');
-    const offBtn = document.getElementById('offBtn');
+    const offBtn = document.getElementById('btnOff');
+    const usbBtn = document.getElementById('btnUsb');
     const fsBtn = document.getElementById('fsBtn');
     const stage = document.getElementById('stage');
 
@@ -225,7 +228,7 @@
       back = null;
     }
 
-    // ON nyní načítá 21.jpg jako první obrázek
+    // ON načte 21.jpg jako první obrázek (jak bylo dohodnuto)
     function turnOn(){
       showTemp(21);
     }
@@ -246,6 +249,108 @@
     fsBtn.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', ()=> { fsBtn.textContent = 'FS'; });
 
+    // --- Web Serial (USB) integration ---
+    // Poznámky:
+    // - Používáme Web Serial API (navigator.serial). Funguje v Chromium (Chrome, Edge) přes HTTPS.
+    // - micro:bit posílá hodnoty přes sériový port (např. ASCII "20\n"). Pokud používáš jiný protokol, uprav parser.
+    // - Pokud váš micro:bit neexportuje sériová data, je potřeba firmware, který to dělá.
+    let serialPort = null;
+    let serialReader = null;
+    let serialKeepReading = false;
+
+    async function connectSerial() {
+      if (!('serial' in navigator)) {
+        alert('Váš prohlížeč nepodporuje Web Serial API. Použijte Chrome/Edge na HTTPS.');
+        return;
+      }
+
+      try {
+        // Otevře dialog pro výběr zařízení
+        serialPort = await navigator.serial.requestPort(); // bez filtrů -> vybereš micro:bit
+        await serialPort.open({ baudRate: 115200 }); // běžné nastavení pro micro:bit; uprav pokud jinak
+
+        // TextDecoderStream + pipeTo je pohodlné pro čtení řádek
+        const textDecoder = new TextDecoderStream();
+        const readableStreamClosed = serialPort.readable.pipeTo(textDecoder.writable);
+        const reader = textDecoder.readable.getReader();
+        serialReader = reader;
+        serialKeepReading = true;
+        usbBtn.textContent = 'USB:ON';
+        usbBtn.style.opacity = '1';
+
+        let buffer = '';
+        while (serialKeepReading) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            buffer += value;
+            let nl;
+            while ((nl = buffer.indexOf('\n')) >= 0) {
+              const line = buffer.slice(0, nl).trim();
+              buffer = buffer.slice(nl + 1);
+              handleSerialLine(line);
+            }
+          }
+        }
+
+      } catch (err) {
+        console.error('Serial connection error:', err);
+        alert('Chyba při připojování k USB: ' + (err && err.message ? err.message : err));
+        disconnectSerial(); // čisté ukončení
+      }
+    }
+
+    function handleSerialLine(line) {
+      // Očekáváme číslo teploty v řádku; najdeme první číslo (může být "temp:20" nebo "20")
+      if (!line) return;
+      const m = line.match(/-?\d+(\.\d+)?/);
+      if (m) {
+        // zaokrouhlíme na celé číslo (přípony souborů jsou integer)
+        const value = Math.round(Number(m[0]));
+        // pokud není nic zapnuto (currentTemp === null), můžeme automaticky zapnout
+        // nebo jen spustit showTemp — zde spustíme přímo showTemp
+        showTemp(value);
+      } else {
+        console.log('Serial line (no number):', line);
+      }
+    }
+
+    async function disconnectSerial() {
+      serialKeepReading = false;
+      usbBtn.textContent = 'USB';
+      try {
+        if (serialReader) {
+          await serialReader.cancel();
+          try { serialReader.releaseLock(); } catch {}
+          serialReader = null;
+        }
+        if (serialPort) {
+          try { await serialPort.close(); } catch {}
+          serialPort = null;
+        }
+      } catch (err) {
+        console.warn('Chyba při odpojování serialu', err);
+      }
+    }
+
+    // USB button toggles connection
+    usbBtn.addEventListener('click', async () => {
+      if (serialPort) {
+        // already connected -> disconnect
+        await disconnectSerial();
+        usbBtn.textContent = 'USB';
+      } else {
+        // connect
+        await connectSerial();
+      }
+    });
+
+    // pokud uživatel zavře stránku, zavřeme port
+    window.addEventListener('beforeunload', async () => {
+      await disconnectSerial();
+    });
+
+    // Inicializace
     window.addEventListener('load', hideAllImmediate);
   </script>
 </body>
