@@ -43,7 +43,7 @@
       width:auto;
       height:auto;
       opacity:0;
-      transition: opacity 150ms ease; /* rychlejší pro testovací mód */
+      transition: opacity 150ms ease;
       will-change: opacity;
       z-index:1;
       pointer-events:none;
@@ -133,10 +133,10 @@
     usbBtn.textContent = 'USB';
     testBtn.textContent = 'T';
 
-    // OBRÁZKY
+    // OBRÁZKY / STAV
     let front = null;
     let back = null;
-    let currentTemp = null;   // aktuální zobrazená teplota v provozním módu / aktuální show
+    let currentTemp = null;   // aktuální zobrazená teplota v provozním módu
     let transitioning = false;
 
     // PARAMETRY FILTRU (pro provozní mód)
@@ -145,15 +145,18 @@
     const MIN_TEMP = -50;
     const MAX_TEMP = 150;
 
-    // BUFFERY
-    const operationalBuffer = []; // provozní - používá filtry + MA
-    const testBuffer = [];        // testovací - ukládá pouze pro případ potřeby (není filtrován)
+    // PROVOZNÍ BUFFER
+    const operationalBuffer = [];
 
-    // testovací mód: false = provozní, true = testovací
+    // TEST MÓD: sekvenční rozsah -5 .. 30
+    const TEST_MIN = -5;
+    const TEST_MAX = 30;
+    const testTemps = [];
+    for (let t = TEST_MIN; t <= TEST_MAX; t++) testTemps.push(t);
     let testMode = false;
-    let testTemp = 21; // rychlá hodnota v test módu (mění ji A/B nebo čísla od micro:bitu)
+    let testIndex = 0; // index v testTemps
 
-    // HELPERS
+    // HELPERS pro operational buffer
     function bufferPush(buf, val){
       buf.push(val);
       while (buf.length > MA_WINDOW) buf.shift();
@@ -181,11 +184,13 @@
       back = null;
       currentTemp = null;
       bufferClear(operationalBuffer);
-      bufferClear(testBuffer);
-      testTemp = 21;
+      testIndex = 0;
+      testMode = false;
       testBtn.classList.remove('test-active');
+      testBtn.disabled = true;
     }
 
+    // crossfade a nastavení obrázku
     function showTemp(newTemp){
       if (transitioning) return;
       const src = filenameForTemp(newTemp);
@@ -234,7 +239,7 @@
         tester.onload = null;
         tester.onerror = null;
         transitioning = false;
-        // pokud obrázek chybí, ignorujeme
+        // obrázek chybí -> ignorovat
       };
       tester.src = src;
     }
@@ -256,58 +261,51 @@
     let serialReader = null;
     let serialKeepReading = false;
 
-    // Přepínání test módu: T bude toggle. Tlačítko aktivní jen po připojení USB.
-    function setTestMode(on){
-      testMode = !!on;
-      if (testMode) {
-        // show last shown image (ten, co byl před přepnutím do test módu)
-        // pokud nic nebylo zobrazeno, použijeme testTemp (nebudeme změňovat currentTemp)
-        if (currentTemp !== null) {
-          testTemp = currentTemp;
-          // explicitně zobrazíme tu samou hodnotu aby bylo jisté, že je vidět poslední obrazek
-          showTemp(testTemp);
-        } else {
-          // nic nebylo zobrazeno, zobrazíme testTemp pokud existuje soubor
-          showTemp(testTemp);
-        }
-        testBtn.classList.add('test-active');
+    // Když přepínáme do test módu, nastavíme testIndex tak, aby začal na poslední provozní hodnotě
+    function enterTestMode() {
+      testMode = true;
+      // najdeme index odpovídající poslední provozní hodnotě currentTemp
+      if (currentTemp !== null) {
+        let idx = currentTemp - TEST_MIN; // direct mapping
+        if (isNaN(idx) || !isFinite(idx)) idx = 0;
+        idx = Math.round(idx);
+        idx = Math.max(0, Math.min(testTemps.length - 1, idx));
+        testIndex = idx;
       } else {
-        // vystup z test módu: necháme provozní buffer nedotčený
-        testBtn.classList.remove('test-active');
+        // pokud nic nebylo zobrazeno před test módem, začneme na začátku (-5)
+        testIndex = 0;
       }
+      // zobrazíme aktuální test image (poslední provozní nebo výchozí)
+      showTemp(testTemps[testIndex]);
+      testBtn.classList.add('test-active');
     }
 
-    // Zpracování příchozí řádky - rozdělíme chování pro testMode a provoz
+    function exitTestMode() {
+      testMode = false;
+      testBtn.classList.remove('test-active');
+      // po návratu do provozního režimu zůstane provozní buffer nedotčený a zobrazená hodnota (currentTemp) zůstane
+      // (pokud chceš, můžeme obnovit z operationalBuffer, ale necháme to tak)
+    }
+
+    // Zpracování příchozí řádky
     function handleSerialLine(line) {
       const raw = line.trim();
       if (raw.length === 0) return;
 
       if (testMode) {
-        // TEST MODE: žádné průměry ani filtry, okamžitá odezva
-        // - "A" nebo "a" => inkrement
-        // - "B" nebo "b" => dekrement
-        // - číslo v řádce => nastavení na toto číslo
+        // TEST MODE: pouze postupné přepínání přes A/B
+        // A => posun vpřed (vyšší index), B => posun zpět (nižší index)
         if (/^[Aa]$/.test(raw)) {
-          testTemp = Math.round(testTemp + 1);
-          bufferPush(testBuffer, testTemp);
-          showTemp(testTemp);
+          if (testIndex < testTemps.length - 1) testIndex++;
+          showTemp(testTemps[testIndex]);
           return;
         }
         if (/^[Bb]$/.test(raw)) {
-          testTemp = Math.round(testTemp - 1);
-          bufferPush(testBuffer, testTemp);
-          showTemp(testTemp);
+          if (testIndex > 0) testIndex--;
+          showTemp(testTemps[testIndex]);
           return;
         }
-        // číslo přímo
-        const mNum = raw.match(/-?\d+(\.\d+)?/);
-        if (mNum) {
-          testTemp = Math.round(Number(mNum[0]));
-          bufferPush(testBuffer, testTemp);
-          showTemp(testTemp);
-          return;
-        }
-        // jinak ignoruj
+        // ignorujeme jiné vstupy v test módu (žádné MA ani filtry)
         return;
       }
 
@@ -349,7 +347,7 @@
         serialReader = reader;
         serialKeepReading = true;
 
-        // povolit tlačítko Test (nějaké zařízení je připojeno)
+        // povolit tlačítko Test (zařízení připojeno)
         testBtn.disabled = false;
 
         let buffer = '';
@@ -374,9 +372,8 @@
 
     async function disconnectSerial() {
       serialKeepReading = false;
-      // deaktivovat test tlačítko při odpojení
       testBtn.disabled = true;
-      setTestMode(false);
+      exitTestMode();
       try {
         if (serialReader) {
           try { await serialReader.cancel(); } catch {}
@@ -404,15 +401,16 @@
     // Test tlačítko: toggle test módu, aktivní pouze po připojení USB
     testBtn.addEventListener('click', () => {
       if (!serialPort) return;
-      setTestMode(!testMode);
+      if (!testMode) enterTestMode();
+      else exitTestMode();
     });
 
-    // Klávesové zkratky: 'a' = test mode ON, 'b' = test mode OFF (nepovinné)
+    // Klávesové zkratky: 't' toggle test módu (nepovinné)
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'a' || e.key === 'A') {
-        setTestMode(true);
-      } else if (e.key === 'b' || e.key === 'B') {
-        setTestMode(false);
+      if (e.key === 't' || e.key === 'T') {
+        if (!serialPort) return;
+        if (!testMode) enterTestMode();
+        else exitTestMode();
       }
     });
 
